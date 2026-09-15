@@ -1,9 +1,10 @@
 services:
   - type: web
     name: canopy-api
-    runtime: docker
+    runtime: python
     rootDir: backend
-    dockerfilePath: ./Dockerfile
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT
     plan: free
     healthCheckPath: /healthz
     # Projects need a persistent disk (paid plans). Without one they reset on every deploy.
@@ -12,6 +13,8 @@ services:
     #   mountPath: /data
     #   sizeGB: 5
     envVars:
+      - key: PYTHON_VERSION
+        value: 3.12.0
       - key: CANOPY_DATA_DIR
         value: /data
       # Replace the Vercel domain with the real production URL. Never "*".
