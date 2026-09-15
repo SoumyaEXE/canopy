@@ -19,4 +19,4 @@ services:
         value: /data
       # Replace the Vercel domain with the real production URL. Never "*".
       - key: CANOPY_CORS_ORIGINS
-        value: https://canopy.vercel.app,http://localhost:5173
+        value: https://canopyy.vercel.app,http://localhost:5173
