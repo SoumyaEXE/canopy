@@ -1,0 +1,220 @@
+{
+  "aoi_area_m2_pixels": 110734.301,
+  "aoi_area_m2_polygon_utm": 110790.454,
+  "aoi_geojson": {
+    "coordinates": [
+      [
+        [
+          -5.9518,
+          39.92838
+        ],
+        [
+          -5.9482,
+          39.92838
+        ],
+        [
+          -5.9482,
+          39.93162
+        ],
+        [
+          -5.9518,
+          39.93162
+        ],
+        [
+          -5.9518,
+          39.92838
+        ]
+      ]
+    ],
+    "type": "Polygon"
+  },
+  "canopy_mask": {
+    "min_hole_px": 5,
+    "min_object_px": 5,
+    "morph_disk_radius_m": 0.4579,
+    "morph_disk_radius_px": 1,
+    "pixel_counts": {
+      "above_threshold": 116599,
+      "after_closing": 109849,
+      "after_opening": 106119,
+      "after_remove_small_holes_clipped": 109683,
+      "after_remove_small_objects": 109849,
+      "aoi": 528077
+    }
+  },
+  "confidence": {
+    "buckets": {
+      "high": ">= 0.7",
+      "low": "< 0.45",
+      "medium": "0.45 to 0.7"
+    },
+    "count_range": [
+      479,
+      585
+    ],
+    "count_range_rule": "lower = high + medium; upper = high + medium + 2 * low (low-confidence regions are usually merged crowns)",
+    "counts": {
+      "high": 275,
+      "low": 53,
+      "medium": 204
+    },
+    "separation_signal": "distance-transform value at centroid / equivalent radius, capped at 1",
+    "shadow_signal": "1 if height/diameter in (0.5, 5.0), 0.4 if measured but outside, 0 if not measured",
+    "size_signal": "1 - |area - median(8 nearest)| / (3 * max(1.4826*MAD, 0.25*median)), floored at 0",
+    "weights": {
+      "separation": 0.3125,
+      "shadow": 0.0,
+      "shape": 0.375,
+      "size": 0.3125
+    }
+  },
+  "created_utc": "2026-09-14T00:00:00Z",
+  "determinism": "No step uses randomness. Crown IDs follow watershed marker order (row, then column). JSON keys are sorted.",
+  "grounding": {
+    "band_normalization_divisors": [
+      255.0,
+      255.0,
+      255.0
+    ],
+    "crop_px": {
+      "col0": 8,
+      "col1": 680,
+      "row0": 56,
+      "row1": 845
+    },
+    "imagery_source": "Esri World Imagery",
+    "input_type": "boundary",
+    "interpreted_as": "RGB, 3 bands, uint8 (Esri World Imagery JPEG tiles)",
+    "resolution_source": "156543.03392804097 * cos(centroid latitude) / 2**zoom",
+    "resolution_spread": {
+      "lat_span_deg": 0.00324,
+      "m_per_px_max": 0.457934,
+      "m_per_px_min": 0.457912,
+      "relative_variation_pct": 0.0047
+    },
+    "tile_fetch_utc": "2026-09-15T03:28:20Z",
+    "tile_range": {
+      "count": 12,
+      "x0": 126738,
+      "x1": 126740,
+      "y0": 99307,
+      "y1": 99310
+    },
+    "tile_url_template": "https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}",
+    "tile_zoom": 18,
+    "working_crs": "EPSG:3857"
+  },
+  "height": {
+    "enabled": false,
+    "unavailable_reason": "Height estimation unavailable: acquisition time unknown."
+  },
+  "input": {
+    "filename": null,
+    "sha256": "d8d0af2866fa307f6122349ef01f72c81063829bb8fb8bb0cf9b92f149b447b2",
+    "type": "drawn"
+  },
+  "job_id": "sample",
+  "library_versions": {
+    "gdal": "3.12.4",
+    "numpy": "2.5.3",
+    "python": "3.14.3",
+    "rasterio": "1.5.1",
+    "scikit-image": "0.26.0",
+    "scipy": "1.18.1",
+    "shapely": "2.1.2"
+  },
+  "m_per_px": 0.4579230004686863,
+  "parameters": {
+    "acquisition_datetime_utc": null,
+    "enable_height": true,
+    "min_crown_diameter_m": 3.0,
+    "threshold_manual": null,
+    "threshold_mode": "otsu",
+    "tile_zoom": 18,
+    "veg_index": "exg"
+  },
+  "raster": {
+    "crs": "EPSG:3857",
+    "height": 789,
+    "transform": [
+      0.597164283,
+      0.0,
+      -662551.383861639,
+      0.0,
+      -0.597164283,
+      4856010.965757374
+    ],
+    "width": 672
+  },
+  "segmentation": {
+    "distance_sigma_px": 1.6378,
+    "markers": 669,
+    "max_crown_area_m2": 400.0,
+    "min_crown_area_m2": 7.0686,
+    "min_solidity": 0.35,
+    "peak_min_distance_px": 3,
+    "regions_kept": 532,
+    "regions_rejected": 137,
+    "regions_total": 669,
+    "rejection_reasons": {
+      "low_solidity": 0,
+      "too_large": 0,
+      "too_small": 137
+    }
+  },
+  "software": {
+    "git_sha": "unknown",
+    "name": "CANOPY",
+    "version": "1.0.0"
+  },
+  "solar": {
+    "solar_source": null,
+    "sun_azimuth_deg": null,
+    "sun_elevation_deg": null
+  },
+  "summary": {
+    "aoi_area_ha": 11.07,
+    "aoi_area_m2": 110734.3,
+    "canopy_area_ha": 2.3,
+    "canopy_area_m2": 22999.8,
+    "canopy_cover_pct": 20.8,
+    "confidence_breakdown": {
+      "high": 275,
+      "low": 53,
+      "medium": 204
+    },
+    "crown_count": 532,
+    "crown_count_range": [
+      479,
+      585
+    ],
+    "edge_crowns": 32,
+    "height_available": false,
+    "height_mean_m": null,
+    "height_measured_count": 0,
+    "height_measured_pct": 0.0,
+    "height_p90_m": null,
+    "height_unavailable_reason": "Height estimation unavailable: acquisition time unknown.",
+    "heights_m": [],
+    "mean_crown_area_m2": 42.3,
+    "median_crown_diameter_m": 5.9,
+    "rejected_regions": 137
+  },
+  "vegetation_index": {
+    "bimodality_coefficient": 0.5647,
+    "confidence": "high",
+    "minority_class_fraction": 0.2208,
+    "name": "exg",
+    "otsu_value": 0.28307234251406044,
+    "rule": "high if Sarle's bimodality coefficient > 5/9 and each class holds >= 5% of AOI pixels",
+    "separability": 0.6974,
+    "threshold_mode": "otsu",
+    "threshold_used": 0.28307234251406044
+  },
+  "warnings": [
+    "137 regions were rejected by size or shape filters. Toggle the Rejected layer to see them.",
+    "53 crowns have low confidence; these are most often merged crowns in dense canopy.",
+    "32 crowns touch the area boundary; they are counted, but their areas are truncated.",
+    "Basemap imagery has no reliable acquisition date; the trees may have changed since capture."
+  ]
+}

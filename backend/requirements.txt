@@ -1,0 +1,16 @@
+# Exact versions the test suite, the sample build and the determinism check were run against.
+# numpy, scipy, rasterio and pyproj at these versions need Python >= 3.12.
+numpy==2.5.3
+scipy==1.18.1
+scikit-image==0.26.0
+# rasterio wheels bundle GDAL, so no system GDAL packages are needed.
+rasterio==1.5.1
+shapely==2.1.2
+pyproj==3.8.0
+fastapi==0.141.1
+uvicorn==0.53.0
+python-multipart==0.0.32
+pydantic==2.13.5
+lxml==6.1.3
+requests==2.34.2
+pillow==12.3.0

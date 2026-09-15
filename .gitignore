@@ -1,0 +1,11 @@
+__pycache__/
+*.pyc
+.pytest_cache/
+.venv/
+backend/scratch/
+node_modules/
+dist/
+.env
+.env.local
+*.log
+.DS_Store

@@ -1,0 +1,19 @@
+services:
+  - type: web
+    name: canopy-api
+    runtime: docker
+    rootDir: backend
+    dockerfilePath: ./Dockerfile
+    plan: free
+    healthCheckPath: /healthz
+    # Projects need a persistent disk (paid plans). Without one they reset on every deploy.
+    # disk:
+    #   name: canopy-data
+    #   mountPath: /data
+    #   sizeGB: 5
+    envVars:
+      - key: CANOPY_DATA_DIR
+        value: /data
+      # Replace the Vercel domain with the real production URL. Never "*".
+      - key: CANOPY_CORS_ORIGINS
+        value: https://canopy.vercel.app,http://localhost:5173

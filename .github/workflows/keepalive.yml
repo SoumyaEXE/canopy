@@ -1,0 +1,17 @@
+name: keepalive
+
+# Free-tier instances sleep after inactivity and a cold start can take ~50 s.
+# Ping /healthz every 10 minutes. Set the API_URL repository variable, e.g. https://canopy-api.onrender.com
+on:
+  schedule:
+    - cron: "*/10 * * * *"
+  workflow_dispatch:
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Ping /healthz
+        run: |
+          test -n "${{ vars.API_URL }}" || { echo "API_URL repository variable is not set"; exit 1; }
+          curl --fail --silent --show-error --max-time 90 --retry 2 "${{ vars.API_URL }}/healthz"

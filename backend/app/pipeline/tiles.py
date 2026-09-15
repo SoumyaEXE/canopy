@@ -1,0 +1,128 @@
+"""Stage 1: fetch Esri World Imagery XYZ tiles covering the AOI and mosaic them.
+
+The endpoint orders its path as {z}/{y}/{x}, not the usual {z}/{x}/{y}.
+A swapped mosaic looks plausible but is geographically scrambled.
+"""
+
+from __future__ import annotations
+
+import io
+import time
+from concurrent.futures import ThreadPoolExecutor
+from datetime import datetime, timezone
+
+import numpy as np
+import requests
+from PIL import Image
+from shapely.geometry import Polygon
+
+from .. import config
+from . import geo
+from .errors import PipelineError
+from .ingest import Scene
+
+
+def tile_url(z: int, x: int, y: int) -> str:
+    return config.TILE_URL_TEMPLATE.format(z=z, x=x, y=y)
+
+
+def tile_range(aoi: Polygon, zoom: int) -> tuple[int, int, int, int]:
+    minx, miny, maxx, maxy = aoi.bounds
+    x0, y0 = geo.lonlat_to_tile(minx, maxy, zoom)  # top-left
+    x1, y1 = geo.lonlat_to_tile(maxx, miny, zoom)  # bottom-right
+    return x0, y0, x1, y1
+
+
+def _fetch_one(z: int, x: int, y: int) -> np.ndarray:
+    cache = config.TILE_CACHE_DIR / f"{z}_{x}_{y}.jpg"
+    if cache.exists():
+        data = cache.read_bytes()
+    else:
+        url = tile_url(z, x, y)
+        last_exc: Exception | None = None
+        data = None
+        for attempt in range(config.TILE_RETRIES + 1):
+            try:
+                r = requests.get(url, timeout=config.TILE_TIMEOUT_S, headers={"User-Agent": config.TILE_USER_AGENT})
+                if r.status_code == 200 and r.content:
+                    data = r.content
+                    break
+                last_exc = RuntimeError(f"HTTP {r.status_code}")
+            except requests.RequestException as exc:
+                last_exc = exc
+            if attempt < config.TILE_RETRIES:
+                time.sleep(0.5 * (2**attempt))
+        if data is None:
+            raise PipelineError(
+                "tile_fetch_failed",
+                f"Could not download imagery tile z={z} x={x} y={y} after {config.TILE_RETRIES + 1} attempts ({last_exc}). "
+                "The job was stopped rather than analysing an image with holes in it. Please try again in a minute.",
+            )
+        cache.write_bytes(data)
+    img = Image.open(io.BytesIO(data)).convert("RGB")
+    if img.size != (geo.TILE_SIZE, geo.TILE_SIZE):
+        raise PipelineError("tile_bad_size", f"Imagery tile z={z} x={x} y={y} had unexpected size {img.size}.")
+    return np.asarray(img, dtype=np.uint8)
+
+
+def fetch_scene(aoi: Polygon, zoom: int) -> Scene:
+    x0, y0, x1, y1 = tile_range(aoi, zoom)
+    nx, ny = x1 - x0 + 1, y1 - y0 + 1
+    n_tiles = nx * ny
+    if n_tiles > config.MAX_TILES:
+        raise PipelineError(
+            "too_many_tiles",
+            f"This area needs {n_tiles} imagery tiles at zoom {zoom}; the limit is {config.MAX_TILES}. "
+            "Please draw a smaller area or choose zoom 18.",
+        )
+    fetched_at = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    jobs = [(zoom, x, y) for y in range(y0, y1 + 1) for x in range(x0, x1 + 1)]
+    with ThreadPoolExecutor(max_workers=config.TILE_FETCH_WORKERS) as pool:
+        arrays = list(pool.map(lambda a: _fetch_one(*a), jobs))
+
+    ts = geo.TILE_SIZE
+    mosaic = np.zeros((ny * ts, nx * ts, 3), dtype=np.uint8)
+    for (z, x, y), arr in zip(jobs, arrays):
+        r, c = (y - y0) * ts, (x - x0) * ts
+        mosaic[r : r + ts, c : c + ts] = arr
+
+    # Affine from the top-left tile origin, in EPSG:3857 units.
+    res = geo.mercator_nominal_px(zoom)
+    ox, oy = geo.tile_origin_mercator(x0, y0, zoom)
+
+    # Crop to the AOI bounding box in pixel space.
+    minx, miny, maxx, maxy = aoi.bounds
+    mx0, my1 = geo.lonlat_to_mercator(minx, maxy)
+    mx1, my0 = geo.lonlat_to_mercator(maxx, miny)
+    c0 = max(0, int(np.floor((mx0 - ox) / res)))
+    c1 = min(mosaic.shape[1], int(np.ceil((mx1 - ox) / res)))
+    r0 = max(0, int(np.floor((oy - my1) / res)))
+    r1 = min(mosaic.shape[0], int(np.ceil((oy - my0) / res)))
+    crop = mosaic[r0:r1, c0:c1]
+    transform = (res, 0.0, ox + c0 * res, 0.0, -res, oy - r0 * res)
+
+    lat_c = aoi.centroid.y
+    m_per_px = geo.mercator_m_per_px(lat_c, zoom)
+    audit = {
+        "input_type": "boundary",
+        "interpreted_as": "RGB, 3 bands, uint8 (Esri World Imagery JPEG tiles)",
+        "imagery_source": config.TILE_SOURCE_NAME,
+        "tile_url_template": config.TILE_URL_TEMPLATE,
+        "tile_zoom": zoom,
+        "tile_range": {"x0": x0, "y0": y0, "x1": x1, "y1": y1, "count": n_tiles},
+        "tile_fetch_utc": fetched_at,
+        "working_crs": "EPSG:3857",
+        "resolution_source": "156543.03392804097 * cos(centroid latitude) / 2**zoom",
+        "resolution_spread": geo.latitude_resolution_spread(aoi, zoom),
+        "crop_px": {"row0": r0, "row1": r1, "col0": c0, "col1": c1},
+        "band_normalization_divisors": [255.0, 255.0, 255.0],
+    }
+    return Scene(
+        rgb=crop.astype(np.float32) / 255.0,
+        nir=None,
+        transform=transform,
+        crs="EPSG:3857",
+        m_per_px=m_per_px,
+        aoi_lonlat=aoi,
+        audit=audit,
+    )

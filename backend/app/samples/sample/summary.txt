@@ -1,0 +1,30 @@
+CANOPY analysis summary
+=======================
+Job: sample
+Created (UTC): 2026-09-14T00:00:00Z
+
+Most defensible numbers (depend only on the threshold and the resolution):
+  AOI area:        11.1 ha
+  Canopy area:     2.3 ha
+  Canopy cover:    20.8 %
+
+Crown count (more assumptions, less certain):
+  532 crowns detected. Plausible range 479 to 585.
+  Confidence: 275 high, 204 medium, 53 low.
+  137 regions rejected by size or shape filters (kept in crowns audit, not counted).
+
+Height: unavailable. Height estimation unavailable: acquisition time unknown.
+
+How these were computed:
+  Resolution: 0.4579 m per pixel (156543.03392804097 * cos(centroid latitude) / 2**zoom).
+  Vegetation index: exg; threshold 0.2831 (otsu, threshold confidence high).
+  Canopy area = canopy pixel count × (m per pixel)².
+  Crowns: distance transform + marker-controlled watershed, filtered by size and solidity.
+
+Warnings:
+  - 137 regions were rejected by size or shape filters. Toggle the Rejected layer to see them.
+  - 53 crowns have low confidence; these are most often merged crowns in dense canopy.
+  - 32 crowns touch the area boundary; they are counted, but their areas are truncated.
+  - Basemap imagery has no reliable acquisition date; the trees may have changed since capture.
+
+This tool does not estimate carbon, biomass or credits. See LIMITATIONS.md.

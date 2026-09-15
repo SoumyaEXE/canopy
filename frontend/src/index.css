@@ -1,0 +1,159 @@
+@import "./styles/globals.css";
+@import "maplibre-gl/dist/maplibre-gl.css";
+
+/* Brand face for the wordmark only. Only the 800 cut ships with the project. */
+@font-face {
+  font-family: "TWK Lausanne";
+  src: url("./assets/fonts/TWKLausannePan-800.otf") format("opentype");
+  font-weight: 800;
+  font-style: normal;
+  font-display: swap;
+}
+
+:root {
+  /* BoardUI's theme expects next/font to expose these; Vite loads the same faces from Google Fonts. */
+  --font-inter: "Inter";
+  --font-mono-source: "JetBrains Mono";
+
+  /* BoardUI's accent is a swap point (its accent engine sets the same variables).
+   * Light mode: graphite, so primary actions, sliders and tabs read black like ink. */
+  --color-accent-50: #f5f5f4;
+  --color-accent-100: #ececea;
+  --color-accent-200: #dcdcd9;
+  --color-accent-300: #b8b8b4;
+  --color-accent-400: #3a3a38;
+  --color-accent-500: #232322;
+  --color-accent-600: #111110;
+  --color-accent-700: #0a0a0a;
+  --color-accent-800: #000000;
+  --color-accent-900: #000000;
+  --color-accent-950: #000000;
+}
+
+/* Dark mode: graphite would vanish, so the accent becomes the brand's deep lime. */
+.dark {
+  --color-accent-50: #f2fbe4;
+  --color-accent-100: #e3f6c5;
+  --color-accent-200: #b4e23c;
+  --color-accent-300: #9fd02a;
+  --color-accent-400: #86b81f;
+  --color-accent-500: #5f8f1a;
+  --color-accent-600: #4d7a12;
+  --color-accent-700: #3d6010;
+  --color-accent-800: #2e480d;
+  --color-accent-900: #1f310a;
+  --color-accent-950: #141f07;
+}
+
+@theme {
+  /* Figures and titles: Inter Tight in light weights, the thin numerals of analytics dashboards. */
+  --font-display: "Inter Tight", var(--font-inter), ui-sans-serif, system-ui, sans-serif;
+  --font-brand: "TWK Lausanne", var(--font-inter), ui-sans-serif, system-ui, sans-serif;
+
+  /* CANOPY's confidence colours are fixed by the build spec (emerald / amber / red) and
+   * must match the map layers exactly, so they are declared once here as tokens. */
+  --color-confidence-high: #22c55e;
+  --color-confidence-medium: #f59e0b;
+  --color-confidence-low: #ef4444;
+  --color-canopy: #10b981;
+
+  /* Brand accent for the selected nav row and primary highlights. */
+  --color-brand: #b4e23c;
+  --color-brand-strong: #9fd02a;
+  --color-brand-foreground: #0f1a02;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+  font-family: var(--font-sans);
+}
+
+/* App shell: the page itself never scrolls; only designated regions do, with hidden scrollbars. */
+html,
+body {
+  overflow: hidden;
+  overscroll-behavior: none;
+  background: var(--color-background-full);
+}
+
+* {
+  scrollbar-width: none;
+}
+*::-webkit-scrollbar {
+  display: none;
+}
+
+.font-display {
+  font-feature-settings: "tnum" 1, "ss01" 1;
+  letter-spacing: -0.035em;
+}
+
+/* Skeleton loading shimmer. */
+.skeleton {
+  background: linear-gradient(90deg, var(--color-background-tertiary-default) 0%, var(--color-background-secondary-hover) 50%, var(--color-background-tertiary-default) 100%);
+  background-size: 200% 100%;
+  animation: skeleton-shimmer 1.4s ease-in-out infinite;
+}
+@keyframes skeleton-shimmer {
+  from { background-position: 100% 0; }
+  to { background-position: -100% 0; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .skeleton { animation: none; }
+}
+
+/* Segmented tick meter: the bar style used for proportions across the dashboard. */
+.tick-meter {
+  --tick: 4px;
+  --gap: 3px;
+  background-image: repeating-linear-gradient(
+    90deg,
+    var(--tick-color, currentColor) 0 var(--tick),
+    transparent var(--tick) calc(var(--tick) + var(--gap))
+  );
+}
+
+/* MapLibre controls, dressed in BoardUI surface tokens so they follow the theme. */
+.maplibregl-ctrl-group {
+  background: var(--color-background-primary-default) !important;
+  border: 1px solid var(--color-border-button-default);
+  border-radius: 10px !important;
+  box-shadow: var(--shadow-xs) !important;
+  overflow: hidden;
+}
+.maplibregl-ctrl-group button + button {
+  border-top: 1px solid var(--color-separator-border) !important;
+}
+.dark .maplibregl-ctrl-icon {
+  filter: invert(1);
+}
+.maplibregl-ctrl-attrib {
+  background: color-mix(in srgb, var(--color-background-primary-default) 85%, transparent) !important;
+  color: var(--color-text-secondary);
+  font-size: 11px;
+  border-radius: 8px 0 0 0;
+}
+.maplibregl-ctrl-attrib a {
+  color: var(--color-text-secondary) !important;
+}
+.maplibregl-ctrl-scale {
+  background: color-mix(in srgb, var(--color-background-primary-default) 85%, transparent) !important;
+  border-color: var(--color-text-secondary) !important;
+  color: var(--color-text-secondary) !important;
+}
+.maplibregl-popup-content {
+  background: var(--color-background-primary-default) !important;
+  border: 1px solid var(--color-border-button-default);
+  border-radius: 16px !important;
+  box-shadow: var(--shadow-dropdown) !important;
+  padding: 0 !important;
+  color: var(--color-text-primary);
+}
+.maplibregl-popup-tip {
+  display: none;
+}
+.maplibregl-canvas-container.canopy-crosshair canvas {
+  cursor: crosshair;
+}

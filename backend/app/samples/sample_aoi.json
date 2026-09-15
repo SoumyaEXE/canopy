@@ -1,0 +1,9 @@
+{
+  "name": "Monfragüe dehesa, Extremadura, Spain",
+  "note": "Holm oak woodland on dry pasture: dense cluster beside scattered trees, clear canopy/bare-ground contrast. Esri imagery metadata at this point: GeoEye-1, 2024-08-25, time of day not published, so height is disabled.",
+  "aoi": {
+    "type": "Polygon",
+    "coordinates": [[[-5.9518, 39.92838], [-5.9482, 39.92838], [-5.9482, 39.93162], [-5.9518, 39.93162], [-5.9518, 39.92838]]]
+  },
+  "params": {"min_crown_diameter_m": 3.0, "veg_index": "exg", "threshold_mode": "otsu", "threshold_manual": null, "tile_zoom": 18, "acquisition_datetime_utc": null, "enable_height": true}
+}
