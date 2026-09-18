@@ -105,6 +105,11 @@ def run_pipeline(
             )
     m = scene.m_per_px
     h, w = scene.rgb.shape[:2]
+    if m > 1.0:
+        warnings.append(
+            f"This imagery is {m:.1f} m per pixel. Individual crowns under about {3 * m:.0f} m across cannot be resolved, "
+            "so the crown count is a lower bound; canopy cover is still meaningful."
+        )
     aoi = vegetation.aoi_mask(scene.aoi_lonlat, scene.transform, scene.crs, (h, w))
     if aoi.sum() == 0:
         raise PipelineError("aoi_empty_raster", "The boundary covers no pixels of the imagery.")
@@ -429,7 +434,7 @@ def _pipeline_view(job_id, files, detector_used, scene, parsed, veg, index_range
         title, headline, caption, stats = stages[f]
         out.append({"key": f[len("stage_"):-len(".png")], "title": title, "headline": headline, "caption": caption,
                     "url": f"/api/jobs/{job_id}/{f}", "stats": stats})
-    label = "DeepForest + canopy mask" if hybrid else "classical watershed"
+    label = "DeepForest + canopy mask" if hybrid else "blob markers + watershed"
     return {"detector": detector_used, "detector_label": label, "stages": out}
 
 

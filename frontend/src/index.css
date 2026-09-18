@@ -11,9 +11,15 @@
 }
 
 :root {
-  /* BoardUI's theme expects next/font to expose these; Vite loads the same faces from Google Fonts. */
-  --font-inter: "Inter";
-  --font-mono-source: "JetBrains Mono";
+  /* Geist, Vercel's typeface, for everything; loaded from Google Fonts in index.html.
+   * (--font-inter is BoardUI's variable name for the sans face.) */
+  --font-inter: "Geist";
+  --font-mono-source: "Geist Mono";
+
+  /* Kumo-style solid button fill: ink in light mode. */
+  --color-button-fill: #111110;
+  --color-button-fill-hover: #2a2a28;
+  --color-button-fill-fg: #ffffff;
 
   /* BoardUI's accent is a swap point (its accent engine sets the same variables).
    * Light mode: graphite, so primary actions, sliders and tabs read black like ink. */
@@ -43,11 +49,16 @@
   --color-accent-800: #2e480d;
   --color-accent-900: #1f310a;
   --color-accent-950: #141f07;
+
+  /* Kumo-style solid button fill: the brand lime in dark mode. */
+  --color-button-fill: #b4e23c;
+  --color-button-fill-hover: #c3ec55;
+  --color-button-fill-fg: #0f1a02;
 }
 
 @theme {
-  /* Figures and titles: Inter Tight in light weights, the thin numerals of analytics dashboards. */
-  --font-display: "Inter Tight", var(--font-inter), ui-sans-serif, system-ui, sans-serif;
+  /* Figures and titles: Geist in light weights, with tight tracking like Vercel's dashboards. */
+  --font-display: "Geist", ui-sans-serif, system-ui, sans-serif;
   --font-brand: "TWK Lausanne", var(--font-inter), ui-sans-serif, system-ui, sans-serif;
 
   /* CANOPY's confidence colours are fixed by the build spec (emerald / amber / red) and
@@ -156,4 +167,12 @@ body {
 }
 .maplibregl-canvas-container.canopy-crosshair canvas {
   cursor: crosshair;
+}
+
+/* Geist reads best with these on, as on vercel.com. */
+html {
+  font-feature-settings: "liga", "calt", "ss01";
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
 }

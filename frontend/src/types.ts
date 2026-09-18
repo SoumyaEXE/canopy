@@ -223,3 +223,24 @@ export interface Project {
   latest_summary: RunSummary | null;
   runs?: Run[];
 }
+
+// ---- workspace assistant (backend/app/assistant.py) ---------------------------------------------------
+
+export interface AssistantInfo {
+  available: boolean;
+  reason: string | null;
+  model: string;
+  suggestions: string[];
+}
+
+export interface ChatTurn {
+  role: "user" | "assistant";
+  content: string;
+}
+
+export type AssistantEvent =
+  | { type: "text"; text: string }
+  | { type: "tool"; name: string; label: string }
+  | { type: "action"; params: Partial<JobParams>; reason: string }
+  | { type: "error"; message: string }
+  | { type: "done" };

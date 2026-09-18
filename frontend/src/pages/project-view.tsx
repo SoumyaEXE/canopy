@@ -21,6 +21,7 @@ import { Button } from "@/components/base/buttons/button";
 import { IconButton } from "@/components/base/buttons/icon-button";
 import { Dropdown, DropdownItem, DropdownPopover, DropdownTrigger } from "@/components/base/dropdown/dropdown";
 import { Tab, TabList, TabPanel, Tabs } from "@/components/base/tabs/tabs";
+import { AiPanel, AskAiButton } from "@/components/canopy/ai-panel";
 import { MapView, type LayerVisibility, type MapMode } from "@/components/canopy/map-view";
 import { ProgressOverlay } from "@/components/canopy/progress-overlay";
 import { Shell, TopBar, useMedia } from "@/components/canopy/shell";
@@ -102,6 +103,19 @@ export function ProjectView({
   const [showLeft, setShowLeft] = useState(true);
   const [showRight, setShowRight] = useState(true);
   const [inspectorTab, setInspectorTab] = useState<"results" | "style">("results");
+  const [aiOpen, setAiOpen] = useState(false);
+
+  // Ctrl/Cmd + I toggles Canopy AI from anywhere in the workspace.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "i") {
+        e.preventDefault();
+        setAiOpen((v) => !v);
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
 
   const [vCorner, setVCorner] = useState<LngLat | null>(null);
   const [vBbox, setVBbox] = useState<[number, number, number, number] | null>(null);
@@ -261,6 +275,7 @@ export function ProjectView({
               {p.liveStatus.message} · {p.liveStatus.stage_index}/{p.liveStatus.stage_total}
             </span>
           )}
+          <AskAiButton onClick={() => setAiOpen((v) => !v)} active={aiOpen} />
           {p.runs.length > 0 && (
             <RunPicker
               runs={p.runs}
@@ -445,6 +460,19 @@ export function ProjectView({
           )}
         </div>
       )}
+      <AiPanel
+        open={aiOpen}
+        onClose={() => setAiOpen(false)}
+        projectId={projectId}
+        projectName={project?.name ?? "Workspace"}
+        runId={p.activeRun?.id ?? null}
+        running={running}
+        onApplyParams={(patch) => {
+          const next = { ...params, ...patch };
+          setParams(next);
+          void run(next);
+        }}
+      />
     </Shell>
   );
 }

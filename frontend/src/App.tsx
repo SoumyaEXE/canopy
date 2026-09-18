@@ -7,6 +7,7 @@ import { Notification, NotificationViewport } from "@/components/base/notificati
 import { LimitationsPanel } from "@/components/canopy/limitations-panel";
 import { MapView } from "@/components/canopy/map-view";
 import { NewProjectModal } from "@/components/canopy/new-project-modal";
+import { CreatingOverlay, type CreatingState } from "@/components/canopy/creating-overlay";
 import { PlaceSearch } from "@/components/canopy/place-search";
 import { Shell, TopBar } from "@/components/canopy/shell";
 import type { NavGroup } from "@/components/canopy/sidebar";
@@ -41,6 +42,7 @@ export default function App() {
   const [notices, setNotices] = useState<{ id: number; title: string; message: string }[]>([]);
   const [newOpen, setNewOpen] = useState(false);
   const [creating, setCreating] = useState(false);
+  const [creatingState, setCreatingState] = useState<CreatingState>(null);
   const [drawName, setDrawName] = useState("");
 
   const notify = useCallback((title: string, message: string) => {
@@ -54,6 +56,25 @@ export default function App() {
   useEffect(() => setNewOpen(false), [route]);
 
   const openProject = (id: string, tab: "overview" | "map" = "overview") => navigate({ name: "project", id, tab });
+
+  /** Runs a create call behind the growing-folder overlay, held long enough to read, then opens the project. */
+  const createWorkspace = async (name: string, source: "file" | "area" | "sample", create: () => Promise<{ project: { id: string } }>) => {
+    const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+    const started = Date.now();
+    setCreating(true);
+    setCreatingState({ name, source, phase: "working" });
+    try {
+      const { project } = await create();
+      await sleep(Math.max(0, 1600 - (Date.now() - started)));
+      setCreatingState({ name, source, phase: "done" });
+      setNewOpen(false);
+      await Promise.all([list.refresh(), sleep(650)]);
+      openProject(project.id);
+    } finally {
+      setCreating(false);
+      setCreatingState(null);
+    }
+  };
 
   const globalGroups = (projects = list.projects): NavGroup<GlobalKey | string>[] => [
     { label: "Workspace", entries: [{ key: "projects", label: "All projects", icon: RiFolderLine, badge: projects?.length || undefined }] },
@@ -86,9 +107,7 @@ export default function App() {
         onSelect={onGlobalSelect}
         onCreate={async (name, aoi) => {
           try {
-            const { project } = await api.createFromArea(name, aoi);
-            await list.refresh();
-            openProject(project.id, "overview");
+            await createWorkspace(name, "area", () => api.createFromArea(name, aoi));
           } catch (err) {
             failed("Could not create the project")(err);
             throw err;
@@ -169,16 +188,10 @@ export default function App() {
           }
         }}
         onUpload={async (name, file, selection) => {
-          setCreating(true);
           try {
-            const { project } = await api.createFromFile(name, file, selection);
-            setNewOpen(false);
-            await list.refresh();
-            openProject(project.id);
+            await createWorkspace(name, "file", () => api.createFromFile(name, file, selection));
           } catch (err) {
             failed("Could not create the project")(err);
-          } finally {
-            setCreating(false);
           }
         }}
         onDraw={(name) => {
@@ -187,19 +200,15 @@ export default function App() {
           navigate({ name: "draw" });
         }}
         onSample={async (name) => {
-          setCreating(true);
           try {
-            const { project } = await api.createFromSample(name);
-            setNewOpen(false);
-            await list.refresh();
-            openProject(project.id);
+            await createWorkspace(name || "Monfragüe dehesa (sample)", "sample", () => api.createFromSample(name));
           } catch (err) {
             failed("Could not create the project")(err);
-          } finally {
-            setCreating(false);
           }
         }}
       />
+
+      <CreatingOverlay state={creatingState} />
 
       {list.error && route.name === "projects" && (
         <NotificationViewport position="top-right">

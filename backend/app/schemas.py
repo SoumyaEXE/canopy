@@ -66,3 +66,8 @@ class ProjectRename(BaseModel):
 
 class RunCreate(BaseModel):
     params: JobParams = JobParams()
+
+
+class ChatIn(BaseModel):
+    messages: list[dict] = Field(..., min_length=1, max_length=80)
+    run_id: str | None = None

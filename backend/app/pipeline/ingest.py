@@ -53,6 +53,8 @@ def _repair(geom):
         reason = explain_validity(geom)
         fixed = make_valid(geom)
         polys = [p for g in getattr(fixed, "geoms", [fixed]) for p in getattr(g, "geoms", [g]) if isinstance(p, Polygon)]
+        if not polys and "Too few points" in reason:
+            raise PipelineError("too_few_points", "The boundary has too few points to enclose an area. A polygon needs at least three corners.")
         if not polys:
             raise PipelineError(
                 "invalid_polygon",
@@ -151,7 +153,11 @@ def _geojson_features(obj: dict) -> list[AreaFeature]:
         try:
             geom = shape(geometry)
         except Exception as exc:  # noqa: BLE001
-            raise PipelineError("bad_geojson", f"The GeoJSON could not be read as a polygon: {exc}") from exc
+            raise PipelineError(
+                "bad_geojson",
+                "The GeoJSON polygon is malformed. Each ring needs at least four numeric [longitude, latitude] points, "
+                "with the last point equal to the first.",
+            ) from exc
         if geom.geom_type not in ("Polygon", "MultiPolygon") or geom.is_empty:
             continue
         name = next((str(props[k]) for k in ("name", "Name", "NAME", "title", "id", "ID") if props.get(k) not in (None, "")), None)

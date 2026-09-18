@@ -1,4 +1,4 @@
-import type { ApiError, JobParams, JobResult, JobStatus, Project, Run, ValidationResult } from "@/types";
+import type { ApiError, AssistantEvent, AssistantInfo, ChatTurn, JobParams, JobResult, JobStatus, Project, Run, ValidationResult } from "@/types";
 
 // VITE_API_BASE must point at the production API in Vercel builds. Empty means same origin (Vite dev proxy).
 export const API_BASE = (import.meta.env.VITE_API_BASE ?? "").replace(/\/$/, "");
@@ -82,4 +82,49 @@ export const api = {
   rejected: (result: JobResult) => request<GeoJSON.FeatureCollection>(result.rejected_geojson_url),
   validate: (jobId: string, bbox: [number, number, number, number], clicks: [number, number][]) =>
     request<ValidationResult>(`/api/jobs/${jobId}/validate`, json("POST", { bbox, clicks })),
+
+  // workspace assistant
+  assistantInfo: (projectId: string) => request<AssistantInfo>(`/api/projects/${projectId}/assistant`),
+  chat: (projectId: string, runId: string | null, messages: ChatTurn[], onEvent: (e: AssistantEvent) => void, signal?: AbortSignal) =>
+    streamChat(projectId, runId, messages, onEvent, signal),
 };
+
+/** POSTs the conversation and reads the Server-Sent Events stream until it ends. */
+async function streamChat(
+  projectId: string,
+  runId: string | null,
+  messages: ChatTurn[],
+  onEvent: (e: AssistantEvent) => void,
+  signal?: AbortSignal,
+): Promise<void> {
+  let res: Response;
+  try {
+    res = await fetch(url(`/api/projects/${projectId}/assistant/chat`), { ...json("POST", { messages, run_id: runId }), signal });
+  } catch {
+    if (signal?.aborted) return;
+    throw new CanopyApiError("network", "Could not reach the analysis server.");
+  }
+  if (!res.ok || !res.body) await parse(res);
+  const reader = res.body!.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+  for (;;) {
+    const { value, done } = await reader.read();
+    if (done) break;
+    buffer += decoder.decode(value, { stream: true });
+    let cut: number;
+    while ((cut = buffer.indexOf("\n\n")) >= 0) {
+      const frame = buffer.slice(0, cut);
+      buffer = buffer.slice(cut + 2);
+      for (const line of frame.split("\n")) {
+        if (line.startsWith("data: ")) {
+          try {
+            onEvent(JSON.parse(line.slice(6)) as AssistantEvent);
+          } catch {
+            /* a malformed frame is skipped, not fatal */
+          }
+        }
+      }
+    }
+  }
+}

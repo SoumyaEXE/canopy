@@ -8,14 +8,14 @@ from pathlib import Path
 
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse, JSONResponse, Response
+from fastapi.responses import FileResponse, JSONResponse, Response, StreamingResponse
 from pydantic import ValidationError
 
-from . import config, jobs
+from . import assistant, config, jobs
 from .projects import store as projects
 from .pipeline import LIMITATIONS_MD, STAGES, PipelineError, ingest
 from .pipeline.validate import validate as run_validation
-from .schemas import JobCreate, JobCreated, JobParams, JobStatusOut, ProjectCreate, ProjectRename, RunCreate, StageInfo, ValidateIn
+from .schemas import ChatIn, JobCreate, JobCreated, JobParams, JobStatusOut, ProjectCreate, ProjectRename, RunCreate, StageInfo, ValidateIn
 
 SAMPLE_DIR = Path(__file__).resolve().parent / "samples" / "sample"
 SAMPLE_ID = "sample"
@@ -376,3 +376,33 @@ def create_run(project_id: str, body: RunCreate):
     except PipelineError as exc:
         return _err(422, exc.code, exc.message)
     return run
+
+
+# ---- workspace assistant --------------------------------------------------------------------------
+
+
+@app.get("/api/projects/{project_id}/assistant")
+def assistant_info(project_id: str):
+    _project_or_404(project_id)
+    ok, why = assistant.available()
+    return {"available": ok, "reason": why, "model": assistant.MODEL, "suggestions": assistant.suggestions(project_id)}
+
+
+@app.post("/api/projects/{project_id}/assistant/chat")
+def assistant_chat(project_id: str, body: ChatIn):
+    _project_or_404(project_id)
+    ok, why = assistant.available()
+    if not ok:
+        return _err(503, "assistant_unavailable", why or "Canopy AI is not configured on this server.")
+    try:
+        # Validate the history and build the context before streaming, so bad input is a clean 4xx.
+        stream = assistant.stream_chat(project_id, body.run_id, body.messages)
+        first = next(stream)
+    except assistant.AssistantError as exc:
+        return _err(exc.status, exc.code, exc.message)
+
+    def events():
+        yield first
+        yield from stream
+
+    return StreamingResponse(events(), media_type="text/event-stream", headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
