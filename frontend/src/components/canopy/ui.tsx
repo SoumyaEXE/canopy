@@ -208,6 +208,7 @@ export function formatRelative(iso: string): string {
 
 export const SOURCE_LABEL: Record<string, string> = {
   geotiff: "GeoTIFF",
+  image: "Image",
   kml: "KML",
   kmz: "KMZ",
   geojson: "GeoJSON",

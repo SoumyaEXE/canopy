@@ -51,6 +51,7 @@ const DEFAULT_PARAMS: JobParams = {
   tile_zoom: 18,
   acquisition_datetime_utc: null,
   enable_height: true,
+  image_m_per_px: null,
 };
 
 const TAB_META: Record<ProjectTab, string> = {

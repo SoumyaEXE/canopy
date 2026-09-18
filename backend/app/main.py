@@ -308,8 +308,10 @@ async def create_project(request: Request):
         if parsed.aoi_lonlat is not None:
             ingest.validate_aoi(parsed.aoi_lonlat)
         if parsed.kind == "geotiff":
-            # Fail on a missing CRS or unreadable raster now, not after the project exists.
-            ingest.load_geotiff(parsed, None)
+            # Fail on an unreadable raster now, not after the project exists.
+            ingest.load_geotiff(parsed, None, params.image_m_per_px)
+        elif parsed.kind == "image":
+            ingest.load_image(parsed, params.image_m_per_px)
         project = projects.create(name, parsed, raw, params.model_dump())
         run = _start_run(project["id"], parsed, params) if start else None
     except PipelineError as exc:
@@ -319,6 +321,19 @@ async def create_project(request: Request):
     except (json.JSONDecodeError, ValueError) as exc:
         return _err(400, "bad_request", f"The request could not be read: {exc}")
     return {"project": _project_or_404(project["id"]), "run": run}
+
+
+def _geotiff_info(raw: bytes) -> dict:
+    import rasterio
+    from rasterio.io import MemoryFile
+
+    try:
+        with MemoryFile(raw) as mem, mem.open() as src:
+            res = abs(src.transform.a) if src.crs is not None and src.crs.is_projected else None
+            return {"width": src.width, "height": src.height, "bands": src.count, "georeferenced": src.crs is not None,
+                    "crs": src.crs.to_string() if src.crs else None, "m_per_px": round(res, 4) if res else None}
+    except rasterio.errors.RasterioIOError as exc:
+        raise PipelineError("bad_geotiff", "The file could not be opened as a GeoTIFF.") from exc
 
 
 @app.post("/api/uploads/inspect")
@@ -336,10 +351,14 @@ async def inspect_upload(request: Request):
         if len(raw) > config.MAX_UPLOAD_BYTES:
             return _err(413, "file_too_large", "The upload is larger than the 100 MB limit.")
         kind, features = ingest.read_features(upload.filename or "upload", raw)
-        return {
-            "kind": kind,
-            "areas": [{"index": feature.index, "name": feature.name} for feature in features],
-        }
+        out = {"kind": kind, "areas": [{"index": feature.index, "name": feature.name} for feature in features]}
+        if kind == "image":
+            out["image"] = {**ingest.image_info(raw), "georeferenced": False}
+            if out["image"]["mode"] in ("L", "LA", "1", "I", "I;16", "F"):
+                raise PipelineError("grayscale", "This image is grayscale. Vegetation indices need colour (red, green and blue) channels.")
+        elif kind == "geotiff":
+            out["image"] = _geotiff_info(raw)
+        return out
     except PipelineError as exc:
         return _err(422, exc.code, exc.message)
     except (json.JSONDecodeError, ValueError) as exc:

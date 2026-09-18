@@ -181,15 +181,15 @@ export default function App() {
         submitting={creating}
         onInspect={async (file) => {
           try {
-            return (await api.inspectFile(file)).areas;
+            return await api.inspectFile(file);
           } catch (err) {
             failed("Could not inspect the file")(err);
             throw err;
           }
         }}
-        onUpload={async (name, file, selection) => {
+        onUpload={async (name, file, selection, params) => {
           try {
-            await createWorkspace(name, "file", () => api.createFromFile(name, file, selection));
+            await createWorkspace(name, "file", () => api.createFromFile(name, file, selection, params));
           } catch (err) {
             failed("Could not create the project")(err);
           }

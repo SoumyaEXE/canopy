@@ -215,11 +215,19 @@ def _kmz_bytes(data: bytes) -> bytes:
         raise PipelineError("bad_kmz", "The KMZ file is not a valid zip archive.") from exc
 
 
+IMAGE_EXTENSIONS = (".png", ".jpg", ".jpeg", ".webp", ".bmp")
+# Plain images carry no location or scale. Their scale is entered by the user; this is the fallback, the
+# resolution of NEON airborne imagery, which is what DeepForest's own sample images (e.g. OSBS_029.png) are.
+DEFAULT_IMAGE_M_PER_PX = 0.1
+
+
 def read_features(filename: str, data: bytes) -> tuple[str, list[AreaFeature]]:
     """Every area in a vector upload, in file order. GeoTIFFs have none."""
     name = filename.lower()
     if name.endswith((".tif", ".tiff")):
         return "geotiff", []
+    if name.endswith(IMAGE_EXTENSIONS):
+        return "image", []
     if name.endswith(".kmz"):
         return "kmz", _kml_features(_kmz_bytes(data))
     if name.endswith(".kml"):
@@ -230,7 +238,10 @@ def read_features(filename: str, data: bytes) -> tuple[str, list[AreaFeature]]:
         except (UnicodeDecodeError, json.JSONDecodeError) as exc:
             raise PipelineError("bad_geojson", "The GeoJSON file is not valid JSON.") from exc
         return "geojson", _geojson_features(obj)
-    raise PipelineError("unsupported_file", "Unsupported file type. Please upload a GeoTIFF (.tif), KML, KMZ, or GeoJSON file.")
+    raise PipelineError(
+        "unsupported_file",
+        "Unsupported file type. Upload a GeoTIFF, a plain image (PNG, JPG, WebP, BMP), or a KML, KMZ or GeoJSON boundary.",
+    )
 
 
 def combine(features: list[AreaFeature], selection: list[int] | None):
@@ -276,8 +287,8 @@ def parse_upload(filename: str, data: bytes, selection: list[int] | None = None)
         raise PipelineError("file_too_large", f"The file is {len(data) / 1e6:.0f} MB. The maximum is 100 MB.")
     digest = sha256_bytes(data)
     kind, features = read_features(filename, data)
-    if kind == "geotiff":
-        return ParsedInput("geotiff", None, data, digest, filename, selection)
+    if kind in ("geotiff", "image"):
+        return ParsedInput(kind, None, data, digest, filename, selection)
     return ParsedInput(kind, combine(features, selection), None, digest, filename, selection)
 
 
@@ -333,7 +344,7 @@ def _normalize(arr: np.ndarray, dtype: str, nodata_mask: np.ndarray) -> tuple[np
     return np.clip(arr / scale, 0.0, 1.0), scale
 
 
-def load_geotiff(parsed: ParsedInput, aoi_lonlat: Polygon | MultiPolygon | None) -> Scene:
+def load_geotiff(parsed: ParsedInput, aoi_lonlat: Polygon | MultiPolygon | None, image_m_per_px: float | None = None) -> Scene:
     import rasterio
     from rasterio.io import MemoryFile
     from rasterio.warp import Resampling, calculate_default_transform, reproject, transform_bounds
@@ -345,11 +356,11 @@ def load_geotiff(parsed: ParsedInput, aoi_lonlat: Polygon | MultiPolygon | None)
             raise PipelineError("bad_geotiff", "The file could not be opened as a GeoTIFF.") from exc
         with src:
             if src.crs is None:
-                raise PipelineError(
-                    "no_crs",
-                    "This GeoTIFF has no coordinate reference system, so its location and pixel size are unknown. "
-                    "CANOPY will not guess. Please export it with a CRS.",
-                )
+                # No location: analyse it like a plain image, at the resolution the user entered.
+                if src.count < 3:
+                    raise PipelineError("grayscale", "This image has fewer than 3 bands. CANOPY needs red, green and blue.")
+                arr = src.read([1, 2, 3])
+                return _image_scene(np.moveaxis(arr, 0, -1), str(arr.dtype), parsed, image_m_per_px, "GeoTIFF without a CRS")  # noqa: E501
             bands, interp = _band_interpretation(src)
             w, s, e, n = transform_bounds(src.crs, "EPSG:4326", *src.bounds, densify_pts=21)
             footprint = box(w, s, e, n)
@@ -462,3 +473,85 @@ def geotiff_solar_metadata(tags: dict) -> tuple[float, float] | None:
         return (float(el), float(az)) if el is not None and az is not None else None
     except ValueError:
         return None
+
+
+# --------------------------------------------------------------------------- plain images (PNG, JPG, ...)
+
+
+def image_info(data: bytes) -> dict:
+    """Size and mode of a plain image, for the upload review step. Raises a PipelineError if unreadable."""
+    from PIL import Image, UnidentifiedImageError
+
+    try:
+        with Image.open(io.BytesIO(data)) as im:
+            return {"width": im.width, "height": im.height, "mode": im.mode, "format": im.format}
+    except (UnidentifiedImageError, OSError) as exc:
+        raise PipelineError("bad_image", "The file could not be opened as an image.") from exc
+
+
+def load_image(parsed: ParsedInput, image_m_per_px: float | None) -> Scene:
+    from PIL import Image, UnidentifiedImageError
+
+    Image.MAX_IMAGE_PIXELS = max(config.MAX_SCENE_PX * 4, 200_000_000)
+    try:
+        im = Image.open(io.BytesIO(parsed.raster_bytes))
+        im.load()
+    except (UnidentifiedImageError, OSError, Image.DecompressionBombError) as exc:
+        raise PipelineError("bad_image", "The file could not be opened as an image.") from exc
+    if im.mode in ("L", "LA", "1", "I", "I;16", "F"):
+        raise PipelineError(
+            "grayscale", "This image is grayscale. Vegetation indices need colour (red, green and blue) channels."
+        )
+    alpha = None
+    if im.mode in ("RGBA", "LA", "PA") or (im.mode == "P" and "transparency" in im.info):
+        alpha = np.asarray(im.convert("RGBA"))[..., 3]
+    arr = np.asarray(im.convert("RGB"))
+    if alpha is not None:
+        arr = arr.copy()
+        arr[alpha == 0] = 0
+    return _image_scene(arr, "uint8", parsed, image_m_per_px, f"{im.format or 'image'} {im.mode}")
+
+
+def _image_scene(arr: np.ndarray, dtype: str, parsed: ParsedInput, image_m_per_px: float | None, what: str) -> Scene:
+    """A located-nowhere raster: placed at 0°N 0°E in Web Mercator, where 1 map unit is 1 ground metre."""
+    assumed = image_m_per_px is None
+    m = float(image_m_per_px or DEFAULT_IMAGE_M_PER_PX)
+    h, w = arr.shape[:2]
+    if h < 8 or w < 8:
+        raise PipelineError("image_too_small", f"The image is only {w} x {h} pixels. CANOPY needs at least 8 x 8.")
+    decimate = 1
+    if h * w > config.MAX_SCENE_PX:
+        decimate = int(np.ceil(np.sqrt(h * w / config.MAX_SCENE_PX)))
+        from PIL import Image
+
+        arr = np.asarray(Image.fromarray(arr.astype(np.uint8) if dtype == "uint8" else arr).reduce(decimate))
+        h, w = arr.shape[:2]
+        m *= decimate
+    valid = ~np.all(arr == 0, axis=-1)
+    rgb = np.zeros((h, w, 3), dtype=np.float32)
+    scales = []
+    for i in range(3):
+        rgb[..., i], sc = _normalize(arr[..., i], dtype, ~valid)
+        scales.append(sc)
+    area_m2 = h * w * m * m
+    if area_m2 < 100:
+        raise PipelineError(
+            "aoi_too_small",
+            f"At {m:g} m per pixel this image covers only {area_m2:.0f} m². Check the ground resolution you entered.",
+        )
+    transform = (m, 0.0, 0.0, 0.0, -m, 0.0)
+    (lon0, lat0), (lon1, lat1) = geo.mercator_to_lonlat(0.0, 0.0), geo.mercator_to_lonlat(w * m, -h * m)
+    footprint = box(min(lon0, lon1), min(lat0, lat1), max(lon0, lon1), max(lat0, lat1))
+    audit = {
+        "input_type": "image",
+        "interpreted_as": f"RGB from {what}, no georeference",
+        "working_crs": "EPSG:3857 (placed at 0°N 0°E, where 1 unit = 1 m)",
+        "resolution_source": ("assumed default" if assumed else "entered by the user") + f": {m:g} m per pixel",
+        "resolution_assumed": assumed,
+        "band_normalization_divisors": [round(float(s), 4) for s in scales],
+        "decimation_factor": decimate,
+        "georeferenced": False,
+        "nodata_pixels": int((~valid).sum()),
+        "tags": {},
+    }
+    return Scene(rgb=rgb, nir=None, transform=transform, crs="EPSG:3857", m_per_px=m, aoi_lonlat=footprint, audit=audit)

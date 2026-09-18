@@ -39,6 +39,7 @@ const PARAM_KEYS: (keyof JobParams)[] = [
   "tile_zoom",
   "acquisition_datetime_utc",
   "enable_height",
+  "image_m_per_px",
 ];
 
 export function countChanges(a: JobParams, b: JobParams | undefined): number {

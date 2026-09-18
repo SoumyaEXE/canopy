@@ -15,6 +15,7 @@ const PARAM_LABEL: Record<keyof JobParams, string> = {
   tile_zoom: "Zoom",
   acquisition_datetime_utc: "Acquisition",
   enable_height: "Height",
+  image_m_per_px: "Image resolution",
 };
 
 function formatParam(key: keyof JobParams, p: JobParams): string {
@@ -24,6 +25,7 @@ function formatParam(key: keyof JobParams, p: JobParams): string {
   if (key === "detector") return v === "classical" ? "classical" : "auto";
   if (key === "threshold_mode") return p.threshold_mode === "manual" ? `manual ${p.threshold_manual}` : "Otsu";
   if (key === "enable_height") return v ? "on" : "off";
+  if (key === "image_m_per_px") return v == null ? "—" : `${v} m/px`;
   if (key === "acquisition_datetime_utc") return v ? String(v).replace("T", " ").replace(":00Z", " UTC") : "unknown";
   return v == null ? "—" : String(v);
 }

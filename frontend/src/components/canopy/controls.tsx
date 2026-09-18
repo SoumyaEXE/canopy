@@ -1,4 +1,4 @@
-import type { ReactNode } from "react";
+import { useState, type ReactNode } from "react";
 import { LinkButton } from "@/components/base/buttons/link-button";
 import { Checkbox } from "@/components/base/checkbox/checkbox";
 import { Input } from "@/components/base/input/input";
@@ -7,6 +7,7 @@ import { SegmentedControl, SegmentedControlItem } from "@/components/base/segmen
 import { Slider } from "@/components/base/slider/slider";
 import { Switch } from "@/components/base/switch/switch";
 import type { LayerVisibility } from "@/components/canopy/map-view";
+import { cx } from "@/utils/cx";
 import type { JobParams, JobResult, SourceKind, VegIndex } from "@/types";
 
 export interface ParamControlProps {
@@ -61,7 +62,7 @@ export function DetectionControls({ params, onParamsChange, result, disabled }: 
         <Hint>
           {params.detector === "classical"
             ? "Blob-detected crown centres, then watershed on the canopy mask. No model."
-            : "DeepForest AI on imagery of 0.2 m per pixel or finer, with outlines from the canopy mask. Coarser imagery, such as satellite basemaps, uses classical blob detection, which measured better there."}
+            : "YOLO11 AI segmentation (YOLO11s-seg with YOLO11n-seg fallback) on imagery of 0.2 m per pixel or finer, with outlines from the canopy mask. Coarser imagery, such as satellite basemaps, uses classical blob detection."}
         </Hint>
       </div>
 
@@ -124,7 +125,71 @@ export function DetectionControls({ params, onParamsChange, result, disabled }: 
   );
 }
 
+export const RESOLUTION_PRESETS: { label: string; value: number }[] = [
+  { label: "Drone", value: 0.03 },
+  { label: "Aerial", value: 0.1 },
+  { label: "Satellite HD", value: 0.3 },
+  { label: "Satellite", value: 0.5 },
+  { label: "Coarse", value: 1 },
+  { label: "Sentinel-2", value: 10 },
+];
+
+/** Ground resolution for a plain image, which carries no scale of its own. */
+export function ResolutionField({ value, onChange, disabled }: { value: number | null | undefined; onChange: (v: number) => void; disabled?: boolean }) {
+  const [text, setText] = useState(value != null ? String(value) : "0.1");
+  const parsed = Number(text);
+  const invalid = !(parsed > 0.005 && parsed <= 30);
+  return (
+    <div className="flex flex-col gap-2">
+      <div className="flex items-end gap-2">
+        <Input
+          label="Ground resolution"
+          size="small"
+          value={text}
+          onChange={(v) => {
+            setText(v);
+            const n = Number(v);
+            if (n > 0.005 && n <= 30) onChange(n);
+          }}
+          isDisabled={disabled}
+          className="w-32"
+        />
+        <span className="pb-2 text-body-2-regular text-text-tertiary">metres per pixel</span>
+      </div>
+      <div className="flex flex-wrap gap-1.5">
+        {RESOLUTION_PRESETS.map((p) => (
+          <button
+            key={p.label}
+            type="button"
+            disabled={disabled}
+            onClick={() => {
+              setText(String(p.value));
+              onChange(p.value);
+            }}
+            className={cx(
+              "cursor-pointer rounded-md px-2 py-1 text-caption-1-medium ring-1 ring-inset transition-colors",
+              Number(text) === p.value ? "bg-text-primary text-background-primary-default ring-text-primary" : "text-text-secondary ring-separator-border hover:bg-background-secondary-default",
+            )}
+          >
+            {p.label} · {p.value} m
+          </button>
+        ))}
+      </div>
+      <Hint>{invalid ? "Enter a value between 0.01 and 30." : "Areas and sizes scale with this, so a wrong value makes every area wrong."}</Hint>
+    </div>
+  );
+}
+
 export function ImageryControls({ params, onParamsChange, sourceKind, disabled }: ParamControlProps) {
+  if (sourceKind === "image") {
+    return (
+      <div className="flex flex-col gap-1.5">
+        <FieldLabel>Plain image</FieldLabel>
+        <Hint>This image has no location or scale of its own, so tell CANOPY how many metres one pixel covers.</Hint>
+        <ResolutionField value={params.image_m_per_px ?? 0.1} onChange={(v) => onParamsChange({ ...params, image_m_per_px: v })} disabled={disabled} />
+      </div>
+    );
+  }
   const isFile = sourceKind === "geotiff";
   return (
     <div className="flex flex-col gap-2.5">

@@ -11,7 +11,8 @@ GIT_SHA = os.environ.get("GIT_SHA") or os.environ.get("RENDER_GIT_COMMIT") or "u
 JOB_DIR = Path(os.environ.get("CANOPY_JOB_DIR", Path(os.environ.get("TMPDIR", os.environ.get("TEMP", "/tmp"))) / "canopy_jobs"))
 TILE_CACHE_DIR = Path(os.environ.get("CANOPY_TILE_CACHE", JOB_DIR.parent / "canopy_tiles"))
 # Projects and their run outputs. Point this at a persistent volume in production.
-DATA_DIR = Path(os.environ.get("CANOPY_DATA_DIR", JOB_DIR.parent / "canopy_data"))
+# Kept inside the repo by default (gitignored), not in %TEMP%, which Windows cleans without asking.
+DATA_DIR = Path(os.environ.get("CANOPY_DATA_DIR", Path(__file__).resolve().parents[1] / "data"))
 
 CORS_ORIGINS = [
     o.strip()

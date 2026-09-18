@@ -13,6 +13,8 @@ export interface JobParams {
   tile_zoom: 18 | 19;
   acquisition_datetime_utc: string | null;
   enable_height: boolean;
+  /** Ground resolution of a plain image (PNG, JPG, or a GeoTIFF without a CRS). */
+  image_m_per_px?: number | null;
 }
 
 export type JobStatusValue = "queued" | "running" | "succeeded" | "failed";
@@ -171,6 +173,12 @@ export type AnalysisInput =
   | { kind: "aoi"; aoi: GeoJSON.Polygon }
   | { kind: "file"; file: File; aoi: GeoJSON.Polygon | null };
 
+export interface UploadInspection {
+  kind: "geotiff" | "image" | "kml" | "kmz" | "geojson";
+  areas: { index: number; name: string | null }[];
+  image?: { width: number; height: number; georeferenced: boolean; bands?: number; crs?: string | null; m_per_px?: number | null; mode?: string; format?: string };
+}
+
 export interface ApiError {
   error_code: string;
   error_message: string;
@@ -207,7 +215,7 @@ export interface Run {
   stage_message?: string;
 }
 
-export type SourceKind = "geotiff" | "kml" | "kmz" | "geojson" | "drawn";
+export type SourceKind = "geotiff" | "image" | "kml" | "kmz" | "geojson" | "drawn";
 
 export interface Project {
   id: string;

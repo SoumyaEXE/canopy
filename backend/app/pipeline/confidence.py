@@ -98,5 +98,5 @@ def score(crowns: list[dict], height_enabled: bool) -> dict:
         "size_signal": "1 - |area - median(8 nearest)| / (3 * max(1.4826*MAD, 0.25*median)), floored at 0",
         "separation_signal": "distance-transform value at centroid / equivalent radius, capped at 1",
         "shadow_signal": f"1 if height/diameter in {PLAUSIBLE_H_TO_D}, 0.4 if measured but outside, 0 if not measured",
-        "detector_signal": "DeepForest box score (0 to 1)" if has_detector else "not used",
+        "detector_signal": "YOLO11 detection score (0 to 1)" if has_detector else "not used",
     }

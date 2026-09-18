@@ -163,6 +163,7 @@ export function ProjectsPage({
   const [renaming, setRenaming] = useState<Project | null>(null);
   const [newName, setNewName] = useState("");
   const [deleting, setDeleting] = useState<Project | null>(null);
+  const [confirmText, setConfirmText] = useState("");
   const [busy, setBusy] = useState(false);
 
   const shown = useMemo(() => {
@@ -277,30 +278,41 @@ export function ProjectsPage({
         </form>
       </Modal>
 
-      <Modal isOpen={!!deleting} onClose={() => setDeleting(null)} title="Delete project" className="w-[440px]">
+      <Modal isOpen={!!deleting} onClose={() => { setDeleting(null); setConfirmText(""); }} title="Delete workspace" className="w-[460px]">
         <div className="flex flex-col gap-4">
-          <p className="text-body-regular text-text-secondary">
-            <span className="text-text-primary">{deleting?.name}</span> and all {deleting?.run_count} of its runs, including their audit bundles, will be
-            permanently deleted. This cannot be undone.
-          </p>
+          <div className="flex gap-3 rounded-xl border border-red-500/25 bg-red-500/8 p-3">
+            <RiDeleteBin6Line className="mt-0.5 size-5 shrink-0 text-text-error-primary" aria-hidden />
+            <p className="text-body-2-regular text-text-secondary">
+              <span className="font-medium text-text-primary">{deleting?.name}</span>, its uploaded file and all {deleting?.run_count} runs, including their
+              audit bundles, will be permanently deleted. This cannot be undone.
+            </p>
+          </div>
+          <Input
+            label={<span>Type <span className="font-mono text-text-primary">{deleting?.name}</span> to confirm</span>}
+            value={confirmText}
+            onChange={setConfirmText}
+            placeholder={deleting?.name}
+            autoFocus
+          />
           {deleting?.latest_run && (deleting.latest_run.status === "running" || deleting.latest_run.status === "queued") && (
             <Chip variant="caption" color="yellow">A run is in progress; wait for it to finish first.</Chip>
           )}
           <div className="flex justify-end gap-2">
-            <Button variant="secondary" size="small" onClick={() => setDeleting(null)}>Cancel</Button>
+            <Button variant="secondary" size="small" onClick={() => { setDeleting(null); setConfirmText(""); }}>Cancel</Button>
             <Button
               variant="danger"
               size="small"
-              disabled={busy}
+              disabled={busy || !deleting || confirmText.trim() !== deleting.name.trim()}
               onClick={async () => {
                 if (!deleting) return;
                 setBusy(true);
                 await onDelete(deleting);
                 setBusy(false);
                 setDeleting(null);
+                setConfirmText("");
               }}
             >
-              {busy ? "Deleting…" : "Delete project"}
+              {busy ? "Deleting…" : "Delete workspace"}
             </Button>
           </div>
         </div>

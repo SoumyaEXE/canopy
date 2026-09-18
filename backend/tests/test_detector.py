@@ -1,4 +1,4 @@
-"""Hybrid outline construction and blob markers. Neither test needs torch: boxes are given, not predicted."""
+"""Hybrid outline construction, blob markers, and YOLO11 segmentation detector tests."""
 
 import numpy as np
 from skimage.draw import disk
@@ -19,6 +19,35 @@ def _scene(n=12, seed=7):
     return rgb, centres
 
 
+def test_yolo11_detector_available():
+    ok, err = detector.available()
+    assert ok is True
+    assert err is None
+
+
+def test_yolo11_model_version():
+    ver = detector.model_version()
+    assert "ultralytics" in ver
+    assert ver["main_model"] == "yolo11s-seg.pt"
+    assert ver["fallback_model"] == "yolo11n-seg.pt"
+
+
+def test_yolo11_detect_returns_boxes_and_info():
+    rgb, _ = _scene()
+    boxes, info = detector.detect(rgb, m_per_px=0.10)
+    assert isinstance(boxes, np.ndarray)
+    assert boxes.ndim == 2 and (boxes.shape[1] == 5 if len(boxes) else True)
+    assert "model" in info
+    assert "model_variant" in info
+    assert info["model_variant"] in ("yolo11s-seg", "yolo11n-seg")
+
+
+def test_yolo11_fallback_mechanism():
+    model_obj, meta = detector._model(force_fallback=True)
+    assert meta["is_fallback"] is True
+    assert meta["model_variant"] == "yolo11n-seg"
+
+
 def test_crowns_from_boxes_one_region_per_box_and_trimmed_to_mask():
     rgb, centres = _scene()
     idx = vegetation.excess_green(rgb)
@@ -31,7 +60,6 @@ def test_crowns_from_boxes_one_region_per_box_and_trimmed_to_mask():
     from scipy import ndimage as ndi
 
     reach = ndi.binary_dilation(canopy, structure=detector._disk(info["trim_tolerance_px"]))
-    # Only crowns that fell back to their ellipse (mask fill too low) may extend past the mask's reach.
     outside = set(np.unique(labels[~reach])) - {0}
     assert len(outside) <= info["crowns_ellipse_only"]
     assert info["crowns_mask_trimmed"] >= len(boxes) // 2
@@ -44,7 +72,7 @@ def test_ellipse_fallback_when_mask_misses_tree():
     aoi = np.ones_like(canopy)
     labels, _, info = detector.crowns_from_boxes(np.array([[10, 10, 30, 30, 0.8]]), canopy, aoi, m_per_px=0.1)
     assert info["crowns_ellipse_only"] == 1
-    assert (labels == 1).sum() > 250  # close to the inscribed circle's pi * 10^2
+    assert (labels == 1).sum() > 250
 
 
 def test_blob_segmentation_is_deterministic_and_finds_crowns():

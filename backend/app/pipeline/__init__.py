@@ -89,9 +89,12 @@ def run_pipeline(
         ingest.validate_aoi(parsed.aoi_lonlat)
 
     # ---- 1-2. Imagery + grounding -------------------------------------------------
-    if parsed.kind == "geotiff":
+    if parsed.kind == "image":
+        progress("acquiring_imagery", "Reading the image")
+        scene = ingest.load_image(parsed, params.get("image_m_per_px"))
+    elif parsed.kind == "geotiff":
         progress("acquiring_imagery", "Reading GeoTIFF and grounding pixel size")
-        scene = ingest.load_geotiff(parsed, parsed.aoi_lonlat)
+        scene = ingest.load_geotiff(parsed, parsed.aoi_lonlat, params.get("image_m_per_px"))
     else:
         requested_zoom = zoom
         zoom = tiles.choose_zoom(parsed.aoi_lonlat, zoom)
@@ -114,6 +117,16 @@ def run_pipeline(
             )
     m = scene.m_per_px
     h, w = scene.rgb.shape[:2]
+    if scene.audit.get("georeferenced") is False:
+        warnings.append(
+            "This image has no location, so it is placed at a neutral reference point (0°N 0°E). Areas, diameters and "
+            f"counts are in real metres at {m:g} m per pixel; the longitude/latitude columns are not real positions."
+        )
+        if scene.audit.get("resolution_assumed"):
+            warnings.append(
+                f"No ground resolution was entered, so {m:g} m per pixel was assumed (typical aerial imagery). "
+                "If that is wrong, every area and size is wrong by the square of the error. Set it in the parameters."
+            )
     if scene.audit.get("decimation_factor", 1) > 1:
         warnings.append(
             f"This GeoTIFF was larger than the {config.MAX_SCENE_PX / 1e6:.0f}-million-pixel budget, so it was averaged "
@@ -151,7 +164,7 @@ def run_pipeline(
     cover_pct = 100.0 * canopy_px / aoi_px
 
     # ---- 5. Crowns ------------------------------------------------------------------
-    # "hybrid" (shown as Auto): DeepForest where the imagery is fine enough for it, blob markers otherwise.
+    # "hybrid" (shown as Auto): YOLO11 segmentation where the imagery is fine enough for it, blob markers otherwise.
     wanted = params.get("detector", "hybrid")
     detector_used, boxes, marker_coords, marker_response = "classical", None, None, None
     if wanted == "hybrid":
@@ -164,7 +177,7 @@ def run_pipeline(
                 f"above {detector.MAX_GSD_M} m, so classical blob detection was used instead (see the Pipeline tab)."
             )
         else:
-            progress("segmenting_crowns", "Detecting trees with DeepForest")
+            progress("segmenting_crowns", "Detecting trees with YOLO11 segmentation")
             boxes, det_info = detector.detect(scene.rgb, m)
             progress("segmenting_crowns", "Shaping crown outlines from the canopy mask")
             labels, distance, hyb_info = detector.crowns_from_boxes(boxes, canopy, aoi, m)
@@ -188,7 +201,7 @@ def run_pipeline(
     solar = {"sun_elevation_deg": None, "sun_azimuth_deg": None, "solar_source": None}
     height_reason = None
     shadow_info = None
-    meta_sun = ingest.geotiff_solar_metadata(scene.audit.get("tags", {})) if parsed.kind == "geotiff" else None
+    meta_sun = ingest.geotiff_solar_metadata(scene.audit.get("tags", {})) if parsed.kind == "geotiff" and scene.audit.get("georeferenced", True) else None
     dt = _parse_dt(params.get("acquisition_datetime_utc"))
     if not params.get("enable_height", True):
         height_reason = "Height estimation turned off in the controls."
@@ -255,7 +268,7 @@ def run_pipeline(
     edge_n = sum(1 for c in kept if c["touches_edge"])
     if edge_n:
         warnings.append(f"{edge_n} crowns touch the area boundary; they are counted, but their areas are truncated.")
-    if parsed.kind != "geotiff":
+    if parsed.kind not in ("geotiff", "image"):
         warnings.append("Basemap imagery has no reliable acquisition date; the trees may have changed since capture.")
 
     summary = {
@@ -281,6 +294,7 @@ def run_pipeline(
     }
     provenance = {
         "input_type": parsed.kind,
+        "georeferenced": scene.audit.get("georeferenced", True),
         "interpreted_as": scene.audit.get("interpreted_as"),
         "m_per_px": round(m, 5),
         "resolution_source": scene.audit.get("resolution_source"),
@@ -394,10 +408,9 @@ def _pipeline_view(job_id, files, detector_used, scene, parsed, veg, index_range
         "stage_detections.png": (
             "AI tree detections",
             f"{seg_info.get('boxes_kept', 0)} trees found",
-            "DeepForest, a RetinaNet trained on hand-labelled airborne imagery, draws a box around every tree it sees. "
-            "Brighter boxes are more confident. Large images run as 400 px patches with 25% overlap, and duplicates "
-            "across patches are merged by non-maximum suppression.",
-            {"Model": seg_info.get("model", "—"),
+            "YOLO11 instance segmentation model (YOLO11s-seg main, with YOLO11n-seg fallback) detects tree crowns across airborne and fine satellite imagery. "
+            "Brighter boxes are more confident. Large images are processed as overlapping patches.",
+            {"Model": f"{seg_info.get('model_variant', 'yolo11s-seg')} ({'Fallback' if seg_info.get('is_fallback') else 'Main'})",
              "Boxes (raw / kept)": f"{seg_info.get('boxes_raw', 0)} / {seg_info.get('boxes_kept', 0)}",
              "Score threshold": seg_info.get("score_threshold", "—"),
              "Upsampling": f"{seg_info.get('work_scale', 1)}×",
@@ -448,7 +461,8 @@ def _pipeline_view(job_id, files, detector_used, scene, parsed, veg, index_range
         title, headline, caption, stats = stages[f]
         out.append({"key": f[len("stage_"):-len(".png")], "title": title, "headline": headline, "caption": caption,
                     "url": f"/api/jobs/{job_id}/{f}", "stats": stats})
-    label = "DeepForest + canopy mask" if hybrid else "blob markers + watershed"
+    model_name = seg_info.get("model_variant", "YOLO11-seg")
+    label = f"{model_name} + canopy mask" if hybrid else "blob markers + watershed"
     return {"detector": detector_used, "detector_label": label, "stages": out}
 
 

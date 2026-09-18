@@ -16,6 +16,8 @@ class JobParams(BaseModel):
     tile_zoom: Literal[18, 19] = 18
     acquisition_datetime_utc: str | None = None
     enable_height: bool = True
+    # Ground resolution of a plain image (PNG, JPG, or a GeoTIFF without a CRS). Ignored for located inputs.
+    image_m_per_px: float | None = Field(None, gt=0.005, le=30.0)
 
 
 class JobCreate(BaseModel):

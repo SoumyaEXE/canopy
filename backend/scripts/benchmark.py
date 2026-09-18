@@ -20,6 +20,7 @@ scored against the same ground truth.
 from __future__ import annotations
 
 import argparse
+import io
 import json
 import os
 import sys
@@ -91,6 +92,18 @@ def variants(raw: bytes, gt: list, names: list[str]) -> dict[str, tuple[bytes, l
         dst = np.zeros((3, dh, dw), dtype=np.uint8)
         reproject(arr, dst, src_transform=t, src_crs=crs, dst_transform=dt, dst_crs="EPSG:4326", resampling=Resampling.bilinear)
         out["wgs84"] = (_write(dst, "EPSG:4326", dt), gt)
+    # Plain PNGs, no location: CANOPY is told only the ground resolution, as a user would enter it.
+    from PIL import Image
+
+    for name, res in (("png", 0.1), ("png 0.5m", 0.5), ("png 1m", 1.0)):
+        if name not in names:
+            continue
+        f = int(round(res / t.a))
+        h, w = arr.shape[1] // f, arr.shape[2] // f
+        small = arr[:, : h * f, : w * f].reshape(3, h, f, w, f).astype(np.float64).mean(axis=(2, 4)).round().astype(np.uint8)
+        buf = io.BytesIO()
+        Image.fromarray(np.moveaxis(small, 0, -1)).save(buf, format="PNG")
+        out[name] = (buf.getvalue(), gt, "image", res)
     if "3x3 mosaic" in names:
         big = np.tile(arr, (1, 3, 3))
         W, H = arr.shape[2] * t.a, arr.shape[1] * -t.e
@@ -121,19 +134,28 @@ def score(pred: list, gt: list) -> dict:
     return {"detected": len(pred), "labelled": len(gt), "matched": tp, "precision": precision, "recall": recall, "f1": f1}
 
 
-def run_one(tif: bytes, detector: str, min_d: float, utm: str) -> tuple[list, float, dict]:
-    parsed = ingest.ParsedInput(kind="geotiff", aoi_lonlat=None, raster_bytes=tif, sha256=ingest.sha256_bytes(tif), filename="v.tif")
+def run_one(tif: bytes, detector: str, min_d: float, utm: str, kind: str = "geotiff", image_m: float | None = None,
+            origin: tuple[float, float] | None = None) -> tuple[list, float, dict]:
+    parsed = ingest.ParsedInput(kind=kind, aoi_lonlat=None, raster_bytes=tif, sha256=ingest.sha256_bytes(tif),
+                                filename="v.png" if kind == "image" else "v.tif")
     params = {"detector": detector, "min_crown_diameter_m": min_d, "veg_index": "exg", "threshold_mode": "otsu",
-              "threshold_manual": None, "tile_zoom": 18, "acquisition_datetime_utc": None, "enable_height": False}
+              "threshold_manual": None, "tile_zoom": 18, "acquisition_datetime_utc": None, "enable_height": False,
+              "image_m_per_px": image_m}
     with tempfile.TemporaryDirectory() as tmp:
         t0 = time.perf_counter()
         result = run_pipeline("bench", Path(tmp), parsed, params, lambda *_: None)
         secs = time.perf_counter() - t0
         fc = json.loads((Path(tmp) / "crowns.geojson").read_text(encoding="utf-8"))
-    to_utm = Transformer.from_crs("EPSG:4326", utm, always_xy=True)
+    if kind == "image":
+        # A plain image sits at 0°N 0°E in Web Mercator with 1 unit = 1 m, so its metres map straight onto the tile.
+        to_utm = Transformer.from_crs("EPSG:4326", "EPSG:3857", always_xy=True)
+        shift = origin or (0.0, 0.0)
+    else:
+        to_utm = Transformer.from_crs("EPSG:4326", utm, always_xy=True)
+        shift = (0.0, 0.0)
     boxes = []
     for f in fc["features"]:
-        xs, ys = zip(*(to_utm.transform(x, y) for x, y in f["geometry"]["coordinates"][0]))
+        xs, ys = zip(*((a + shift[0], b + shift[1]) for a, b in (to_utm.transform(x, y) for x, y in f["geometry"]["coordinates"][0])))
         boxes.append(box(min(xs), min(ys), max(xs), max(ys)))
     return boxes, secs, result["summary"]
 
@@ -141,17 +163,19 @@ def run_one(tif: bytes, detector: str, min_d: float, utm: str) -> tuple[list, fl
 def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--detector", choices=["hybrid", "classical", "both"], default="both")
-    ap.add_argument("--variants", nargs="+", default=["native", "wgs84", "0.5m", "1m", "3x3 mosaic"])
+    ap.add_argument("--variants", nargs="+", default=["native", "wgs84", "0.5m", "1m", "3x3 mosaic", "png", "png 0.5m", "png 1m"])
     ap.add_argument("--min-crown", type=float, default=3.0)
     ap.add_argument("--json", type=Path, help="also write the results table as JSON")
     args = ap.parse_args()
 
-    gt, utm, raw, _ = ground_truth()
+    gt, utm, raw, t = ground_truth()
     dets = ["hybrid", "classical"] if args.detector == "both" else [args.detector]
     rows = []
-    for name, (tif, truth) in variants(raw, gt, args.variants).items():
+    for name, spec in variants(raw, gt, args.variants).items():
+        tif, truth = spec[0], spec[1]
+        kind, image_m = (spec[2], spec[3]) if len(spec) > 2 else ("geotiff", None)
         for det in dets:
-            pred, secs, summary = run_one(tif, det, args.min_crown, utm)
+            pred, secs, summary = run_one(tif, det, args.min_crown, utm, kind, image_m, (t.c, t.f))
             s = score(pred, truth)
             rows.append({"variant": name, "detector": det, "seconds": round(secs, 1),
                          "count_range": summary["crown_count_range"], **s})

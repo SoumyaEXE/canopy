@@ -1,4 +1,4 @@
-import type { ApiError, AssistantEvent, AssistantInfo, ChatTurn, JobParams, JobResult, JobStatus, Project, Run, ValidationResult } from "@/types";
+import type { ApiError, AssistantEvent, AssistantInfo, ChatTurn, JobParams, JobResult, JobStatus, Project, Run, UploadInspection, ValidationResult } from "@/types";
 
 // VITE_API_BASE must point at the production API in Vercel builds. Empty means same origin (Vite dev proxy).
 export const API_BASE = (import.meta.env.VITE_API_BASE ?? "").replace(/\/$/, "");
@@ -57,7 +57,7 @@ export const api = {
   inspectFile: (file: File) => {
     const form = new FormData();
     form.append("file", file);
-    return request<{ kind: string; areas: { index: number; name: string | null }[] }>("/api/uploads/inspect", { method: "POST", body: form });
+    return request<UploadInspection>("/api/uploads/inspect", { method: "POST", body: form });
   },
   createFromFile: (name: string, file: File, selection?: number[], params?: Partial<JobParams>) => {
     const form = new FormData();

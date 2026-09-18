@@ -1,7 +1,8 @@
-# Optional: the AI tree detector used by detector="hybrid" (Auto) on imagery of 0.2 m/px or finer.
+# Optional: the AI tree detector (YOLO11s-seg / YOLO11n-seg) used by detector="hybrid" (Auto) on imagery of 0.2 m/px or finer.
 # CPU-only torch keeps the install ~1 GB smaller. Without these, Auto falls back to classical and says so.
 #   pip install -r requirements-ai.txt --index-url https://download.pytorch.org/whl/cpu --extra-index-url https://pypi.org/simple
-# The model weights (weecology/deepforest-tree, ~130 MB) download from Hugging Face on first use.
-deepforest==2.1.0
+# YOLO11 segmentation models download automatically from Ultralytics on first use or load fine-tuned weights.
+ultralytics>=8.3.0
 torch==2.14.0
 torchvision==0.29.0
+

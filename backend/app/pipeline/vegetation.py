@@ -104,8 +104,14 @@ def canopy_mask(
     min_px = max(1, int(math.ceil(1.0 / (m_per_px**2))))
 
     raw = (index > threshold) & aoi
-    opened = morphology.opening(raw, disk)
-    closed = morphology.closing(opened, disk)
+    if m_per_px > 1.0:
+        # At coarse resolution a single pixel is already more than 1 m² of canopy, so opening would erase real,
+        # narrow canopy (hedgerows, single trees) rather than noise. Clean nothing.
+        radius = 0
+        opened = closed = raw
+    else:
+        opened = morphology.opening(raw, disk)
+        closed = morphology.closing(opened, disk)
     # max_size removes objects/holes of size <= max_size, so pass min_px - 1 to keep exactly-1 m² objects.
     no_small = morphology.remove_small_objects(closed, max_size=min_px - 1) if min_px > 1 else closed
     filled = morphology.remove_small_holes(no_small, max_size=min_px - 1) if min_px > 1 else no_small
