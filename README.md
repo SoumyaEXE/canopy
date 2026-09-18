@@ -26,8 +26,12 @@ Backend (Python ≥ 3.12):
 cd backend
 python -m venv .venv
 .venv/bin/pip install -r requirements-dev.txt      # Windows: .venv\Scripts\pip
+# optional, for the AI tree detector (Auto mode on imagery of 0.2 m/px or finer):
+.venv/bin/pip install -r requirements-ai.txt --index-url https://download.pytorch.org/whl/cpu --extra-index-url https://pypi.org/simple
 .venv/bin/uvicorn app.main:app --port 8000
 ```
+
+Measured accuracy against 61 hand-labelled trees: `.venv/bin/python scripts/benchmark.py` (results and caveats in [docs/METHOD.md](docs/METHOD.md#measured-accuracy)).
 
 Frontend (Node ≥ 20):
 

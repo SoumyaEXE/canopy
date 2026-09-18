@@ -2,7 +2,7 @@
 
 Every number CANOPY reports comes from the steps below. Each parameter named here is written into `manifest.json` in the audit bundle, and the ones a user can change are in the control rail.
 
-The pipeline is classical computer vision only: no trained model and no deep learning. Given the same input and parameters, it produces byte-identical `crowns.geojson`. This is checked by `backend/scripts/build_sample.py`, `tests/test_determinism.py`, and the API end-to-end script.
+Canopy area and cover come from classical computer vision only. Crown detection has two paths (section 6): a pretrained tree detector (DeepForest) on fine imagery, and classical blob markers elsewhere. Both are deterministic: given the same input and parameters, the pipeline produces byte-identical `crowns.geojson`. This is checked by `backend/scripts/build_sample.py`, `tests/test_determinism.py`, and the API end-to-end script.
 
 ## Optional local calibration model
 
@@ -90,20 +90,38 @@ Outputs:
 - Canopy area = mask pixels × `m_per_px²`.
 - Canopy cover = canopy area / AOI area.
 
-## 6. Crown segmentation
+## 6. Crown detection and segmentation
 
-Marker-controlled watershed on the canopy mask:
+The `detector` parameter is `hybrid` (shown as **Auto**, the default) or `classical`. Auto picks by resolution, because each method was measured to win in a different range (see *Measured accuracy* below):
 
-1. Euclidean distance transform.
-2. Gaussian smoothing with `sigma = max(1, (d/4) / m_per_px)` px, where `d` is the minimum crown diameter (default 3 m).
-3. Markers from `peak_local_max` with `min_distance = max(2, int((d/2) / m_per_px))` px.
-4. Watershed of the negated distance, limited to the mask.
+| Pixel size | Auto uses | Why |
+|---|---|---|
+| ≤ 0.20 m | DeepForest + canopy mask | F1 0.76 at 0.1 m, against 0.56 for blobs |
+| > 0.20 m (all satellite basemaps) | Classical blob markers | DeepForest falls to F1 0.37 at 0.25 m and under 0.1 at 0.5 m; blobs hold 0.68 at 0.5 m |
+
+If torch or deepforest is not installed, Auto uses classical and adds a warning.
+
+**DeepForest path** (`pipeline/detector.py`):
+
+1. `weecology/deepforest-tree` (RetinaNet trained on 0.1 m airborne RGB) predicts tree boxes. Images larger than 400 px run as 400 px patches with 25% overlap, and duplicates are merged by NMS at IoU 0.15. Boxes scoring below 0.3 are dropped.
+2. Each box's inscribed ellipse claims pixels. Where ellipses overlap, a pixel goes to the box with the smaller normalised elliptical distance.
+3. Each ellipse is trimmed to the canopy mask grown by 0.5 m (crown edges are darker than centres). If the mask covers under 35% of the ellipse, the mask missed that tree and the ellipse itself is the outline.
+4. The size filter uses a 1 m minimum diameter, because the detector already vouches for each tree.
+
+**Classical path** (`crowns.segment_blobs`):
+
+1. Response = `clip(index − threshold, 0) × (0.5 + brightness)`. Sunlit crowns are greenest and brightest in the middle.
+2. Laplacian-of-Gaussian blobs, radius from `d/2` (half the minimum crown diameter) to 6 m, 12 scales, threshold 0.02. Blobs whose centre is not on canopy are dropped.
+3. Watershed of the smoothed negated response from each blob, inside the canopy mask and within 1.4 blob radii of its centre.
+4. The size filter uses `d/2` as the minimum diameter.
+
+This replaced distance-transform peaks, which only find a centre where the mask has a waist, so touching crowns merged (15 of 61 trees found on the benchmark tile).
 
 ## 7. Crown filtering and polygons
 
 Each region is kept or rejected:
 
-- **Too small:** area below `π(d/2)²`.
+- **Too small:** area below `π(d_min/2)²`, where `d_min` is 1 m (DeepForest) or `d/2` (classical); see section 6.
 - **Too large:** area above 400 m².
 - **Low solidity:** solidity below 0.35.
 
@@ -187,3 +205,22 @@ The audit bundle (`audit.zip`) contains:
 JSON is written with sorted keys and fixed separators. Zip entries carry a fixed timestamp.
 
 No carbon, biomass or credit figure is computed anywhere. See LIMITATIONS.md.
+
+## Measured accuracy
+
+`backend/scripts/benchmark.py` scores the full pipeline against the 61 hand-labelled crowns of DeepForest's `OSBS_029` tile (NEON, Florida, 0.1 m). A detection matches a label when their boxes overlap at IoU ≥ 0.4, one to one. That is DeepForest's own evaluation rule. Defaults throughout (Auto, minimum crown 3 m, Otsu). Raw numbers are in `docs/benchmark_osbs029.json`.
+
+| Input | Before (distance-transform watershed) | Auto: found / matched | Precision | Recall | F1 |
+|---|---|---|---|---|---|
+| Native 0.1 m | 15 found | 55 / 44 | 0.80 | 0.72 | 0.76 |
+| Same pixels in WGS84 | 25 found | 64 / 47 | 0.73 | 0.77 | 0.75 |
+| 3×3 mosaic (549 trees) | 129 found | 504 / 377 | 0.75 | 0.69 | 0.72 |
+| Downsampled to 0.5 m | 25 found | 54 / 39 | 0.72 | 0.64 | 0.68 |
+| Downsampled to 1 m | 21 found | 38 / 23 | 0.61 | 0.38 | 0.46 |
+
+For reference, DeepForest's own boxes with no CANOPY post-processing score P 0.82 / R 0.74 on the native tile, so the mask-shaped outlines cost almost nothing against boxes while giving real crown areas.
+
+Caveats:
+
+- This is one 40 × 40 m tile of one forest type. The resolution cut-over (0.2 m), the blob threshold and the trim tolerance were chosen on it, so these numbers are optimistic for other scenes.
+- The Monfragüe sample went from 532 to 1,107 crowns with the classical blob path. The extra regions are mostly small dark crowns and shrubs the old method merged or rejected. Some large holm oaks are also split into two or three regions. Without labels for that scene, neither count is verified. Use the Validation tab to measure it.

@@ -1,0 +1,156 @@
+{
+  "iou_threshold": 0.4,
+  "min_crown_diameter_m": 3.0,
+  "rows": [
+    {
+      "variant": "native",
+      "detector": "hybrid",
+      "seconds": 9.4,
+      "count_range": [
+        54,
+        56
+      ],
+      "detected": 55,
+      "labelled": 61,
+      "matched": 44,
+      "precision": 0.8,
+      "recall": 0.7213114754098361,
+      "f1": 0.7586206896551724
+    },
+    {
+      "variant": "native",
+      "detector": "classical",
+      "seconds": 1.3,
+      "count_range": [
+        33,
+        45
+      ],
+      "detected": 39,
+      "labelled": 61,
+      "matched": 28,
+      "precision": 0.717948717948718,
+      "recall": 0.45901639344262296,
+      "f1": 0.5599999999999999
+    },
+    {
+      "variant": "0.5m",
+      "detector": "hybrid",
+      "seconds": 0.1,
+      "count_range": [
+        52,
+        56
+      ],
+      "detected": 54,
+      "labelled": 61,
+      "matched": 39,
+      "precision": 0.7222222222222222,
+      "recall": 0.639344262295082,
+      "f1": 0.6782608695652174
+    },
+    {
+      "variant": "0.5m",
+      "detector": "classical",
+      "seconds": 0.1,
+      "count_range": [
+        52,
+        56
+      ],
+      "detected": 54,
+      "labelled": 61,
+      "matched": 39,
+      "precision": 0.7222222222222222,
+      "recall": 0.639344262295082,
+      "f1": 0.6782608695652174
+    },
+    {
+      "variant": "1m",
+      "detector": "hybrid",
+      "seconds": 0.1,
+      "count_range": [
+        37,
+        39
+      ],
+      "detected": 38,
+      "labelled": 61,
+      "matched": 23,
+      "precision": 0.6052631578947368,
+      "recall": 0.3770491803278688,
+      "f1": 0.46464646464646464
+    },
+    {
+      "variant": "1m",
+      "detector": "classical",
+      "seconds": 0.1,
+      "count_range": [
+        37,
+        39
+      ],
+      "detected": 38,
+      "labelled": 61,
+      "matched": 23,
+      "precision": 0.6052631578947368,
+      "recall": 0.3770491803278688,
+      "f1": 0.46464646464646464
+    },
+    {
+      "variant": "wgs84",
+      "detector": "hybrid",
+      "seconds": 10.8,
+      "count_range": [
+        63,
+        65
+      ],
+      "detected": 64,
+      "labelled": 61,
+      "matched": 47,
+      "precision": 0.734375,
+      "recall": 0.7704918032786885,
+      "f1": 0.7519999999999999
+    },
+    {
+      "variant": "wgs84",
+      "detector": "classical",
+      "seconds": 1.7,
+      "count_range": [
+        37,
+        41
+      ],
+      "detected": 39,
+      "labelled": 61,
+      "matched": 31,
+      "precision": 0.7948717948717948,
+      "recall": 0.5081967213114754,
+      "f1": 0.62
+    },
+    {
+      "variant": "3x3 mosaic",
+      "detector": "hybrid",
+      "seconds": 44.6,
+      "count_range": [
+        493,
+        515
+      ],
+      "detected": 504,
+      "labelled": 549,
+      "matched": 377,
+      "precision": 0.748015873015873,
+      "recall": 0.6867030965391621,
+      "f1": 0.7160493827160495
+    },
+    {
+      "variant": "3x3 mosaic",
+      "detector": "classical",
+      "seconds": 8.6,
+      "count_range": [
+        285,
+        397
+      ],
+      "detected": 341,
+      "labelled": 549,
+      "matched": 239,
+      "precision": 0.7008797653958945,
+      "recall": 0.4353369763205829,
+      "f1": 0.5370786516853934
+    }
+  ]
+}

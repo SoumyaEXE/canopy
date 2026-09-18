@@ -11,3 +11,6 @@ dist/
 .DS_Store
 deploy.tar.gz
 *.tar.gz
+
+# PyTorch Lightning run logs written by DeepForest
+lightning_logs/
