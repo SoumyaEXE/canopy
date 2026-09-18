@@ -1,4 +1,5 @@
 import { useId, useMemo, useState } from "react";
+import { WarningCards } from "@/components/canopy/warning-cards";
 import {
   RiArrowRightUpLine,
   RiCheckboxMultipleLine,
@@ -315,14 +316,7 @@ export function OverviewPage({ result, crowns, run, runs, loading, onOpenMap, on
         <Panel className="gap-4 md:col-span-2 xl:col-span-6">
           <PanelHeader eyebrow="Read before using the numbers" title={`${result.warnings.length} ${result.warnings.length === 1 ? "warning" : "warnings"}`} icon={RiErrorWarningLine} />
           {result.warnings.length ? (
-            <ul className="flex flex-col">
-              {result.warnings.map((w) => (
-                <li key={w} className="flex items-start gap-3 border-t border-separator-border py-3 first:border-t-0 first:pt-0">
-                  <span className="mt-1.5 size-1.5 shrink-0 rounded-full bg-confidence-medium" />
-                  <span className="text-body-2-regular text-text-primary">{w}</span>
-                </li>
-              ))}
-            </ul>
+            <WarningCards warnings={result.warnings} header={false} listClassName="grid grid-cols-1 items-start gap-2 sm:grid-cols-2" />
           ) : (
             <p className="text-body-2-regular text-text-tertiary">No warnings for this run.</p>
           )}

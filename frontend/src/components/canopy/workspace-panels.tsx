@@ -1,11 +1,12 @@
 import { useMemo } from "react";
-import { RiCheckLine, RiPlayFill } from "@remixicon/react";
+import { RiCheckLine, RiPlayFill, RiRulerLine, RiSunLine } from "@remixicon/react";
 import { Button } from "@/components/base/buttons/button";
 import { Slider } from "@/components/base/slider/slider";
 import { Switch } from "@/components/base/switch/switch";
 import { DetectionControls, HeightControls, ImageryControls, LayerControls, type ParamControlProps } from "@/components/canopy/controls";
 import type { LayerVisibility } from "@/components/canopy/map-view";
 import { DotLabel, Figure, Skeleton, TickMeter } from "@/components/canopy/ui";
+import { WarningCards } from "@/components/canopy/warning-cards";
 import {
   BASEMAPS,
   CANOPY_COLOR,
@@ -290,6 +291,17 @@ export function MapLegend({ style, crowns }: { style: MapStyleState; crowns: Geo
 
 /* --------------------------------------------------------------- results */
 
+function StatTile({ label, value, hint, accent }: { label: string; value: string; hint?: string; accent: string }) {
+  return (
+    <div className="relative overflow-hidden rounded-xl bg-background-secondary-default p-3 ring-1 ring-separator-border ring-inset">
+      <span className="absolute inset-x-0 top-0 h-0.5" style={{ background: accent }} aria-hidden />
+      <p className="text-caption-1-regular text-text-tertiary">{label}</p>
+      <p className={cx("mt-1 truncate font-display leading-none tracking-[-0.02em] text-text-primary tabular-nums", value.length > 12 ? "text-[16px]" : value.length > 8 ? "text-[19px]" : "text-[22px]")} title={value}>{value}</p>
+      {hint && <p className="mt-1.5 truncate text-caption-1-regular text-text-tertiary">{hint}</p>}
+    </div>
+  );
+}
+
 export function ResultsSummary({ result, loading }: { result: JobResult | null; loading: boolean }) {
   if (loading || !result) {
     return (
@@ -319,9 +331,14 @@ export function ResultsSummary({ result, loading }: { result: JobResult | null; 
       </div>
       <div className="flex flex-col gap-3 border-t border-separator-border pt-5">
         <DotLabel color="var(--color-brand-strong)">Crowns</DotLabel>
-        <div className="flex items-end gap-5">
-          <Figure value={s.crown_count} unit="detected" size="md" unitBelow />
-          <Figure value={`${s.crown_count_range[0]}–${s.crown_count_range[1]}`} unit="range" size="md" unitBelow />
+        <div className="grid grid-cols-2 gap-2">
+          <StatTile label="Detected" value={s.crown_count.toLocaleString()} hint={`${s.rejected_regions} rejected`} accent="var(--color-brand-strong)" />
+          <StatTile
+            label="Plausible range"
+            value={`${s.crown_count_range[0].toLocaleString()}–${s.crown_count_range[1].toLocaleString()}`}
+            hint="est. true count"
+            accent="#f59e0b"
+          />
         </div>
         <div className="flex flex-col gap-2 pt-1">
           {(["high", "medium", "low"] as const).map((b) => (
@@ -333,26 +350,30 @@ export function ResultsSummary({ result, loading }: { result: JobResult | null; 
           ))}
         </div>
       </div>
-      <div className="flex flex-col gap-1.5 border-t border-separator-border pt-5">
+      <div className="flex flex-col gap-3 border-t border-separator-border pt-5">
         <DotLabel color="#38bdf8">Height</DotLabel>
-        <p className="text-body-2-regular text-text-primary">
-          {s.height_available
-            ? `${s.height_measured_count} of ${s.crown_count} crowns measured (${s.height_measured_pct.toFixed(0)}%), mean ${s.height_mean_m?.toFixed(0)} m`
-            : s.height_unavailable_reason}
-        </p>
+        {s.height_available && s.height_mean_m != null ? (
+          <div className="grid grid-cols-2 gap-2">
+            <StatTile label="Mean height" value={`${s.height_mean_m.toFixed(0)} m`} hint={s.height_p90_m != null ? `p90 ${s.height_p90_m.toFixed(0)} m` : undefined} accent="#38bdf8" />
+            <StatTile label="Measured" value={`${s.height_measured_pct.toFixed(0)}%`} hint={`${s.height_measured_count} of ${s.crown_count} crowns`} accent="#38bdf8" />
+          </div>
+        ) : (
+          <div className="flex items-center gap-3 rounded-xl bg-background-secondary-default p-3 ring-1 ring-separator-border ring-inset">
+            <span className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-sky-500/12 text-sky-500">
+              {/acquisition|time|date/i.test(s.height_unavailable_reason ?? "") ? <RiSunLine className="size-4" aria-hidden /> : <RiRulerLine className="size-4" aria-hidden />}
+            </span>
+            <div className="min-w-0">
+              <p className="text-body-2-medium text-text-primary">Not estimated</p>
+              <p className="text-caption-1-regular text-text-tertiary">
+                {/acquisition time unknown/i.test(s.height_unavailable_reason ?? "")
+                  ? "Needs the capture time to place the sun"
+                  : (s.height_unavailable_reason ?? "").replace(/^Height estimation unavailable:\s*/i, "")}
+              </p>
+            </div>
+          </div>
+        )}
       </div>
-      {result.warnings.length > 0 && (
-        <div className="flex flex-col gap-2 border-t border-separator-border pt-5">
-          <DotLabel color={CONFIDENCE_COLORS.medium}>{result.warnings.length} warnings</DotLabel>
-          <ul className="flex flex-col gap-1.5">
-            {result.warnings.map((w) => (
-              <li key={w} className="text-caption-1-regular text-text-secondary">
-                {w}
-              </li>
-            ))}
-          </ul>
-        </div>
-      )}
+      {result.warnings.length > 0 && <WarningCards warnings={result.warnings} className="border-t border-separator-border pt-5" />}
     </div>
   );
 }

@@ -348,10 +348,16 @@ export function MapView(props: MapViewProps) {
   useEffect(() => {
     const map = mapRef.current;
     if (!map || !ready || !result) return;
-    const ring = result.aoi.coordinates[0];
-    if (!ring || !ring.length) return;
-    const lons = ring.map((c) => c[0]).filter(Number.isFinite);
-    const lats = ring.map((c) => c[1]).filter(Number.isFinite);
+    // Every vertex of a Polygon or MultiPolygon (a KML with several areas is a MultiPolygon).
+    const points: number[][] = [];
+    const collect = (c: unknown): void => {
+      if (!Array.isArray(c)) return;
+      if (typeof c[0] === "number") points.push(c as number[]);
+      else c.forEach(collect);
+    };
+    collect((result.aoi as { coordinates?: unknown }).coordinates);
+    const lons = points.map((c) => c[0]).filter(Number.isFinite);
+    const lats = points.map((c) => c[1]).filter(Number.isFinite);
     if (!lons.length || !lats.length) return;
     const bounds: LngLatBoundsLike = [
       [Math.min(...lons), Math.min(...lats)],

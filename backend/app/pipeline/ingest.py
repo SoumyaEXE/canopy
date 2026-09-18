@@ -551,6 +551,7 @@ def _image_scene(arr: np.ndarray, dtype: str, parsed: ParsedInput, image_m_per_p
         "band_normalization_divisors": [round(float(s), 4) for s in scales],
         "decimation_factor": decimate,
         "georeferenced": False,
+        "imagery_source": "Uploaded image (no location)",
         "nodata_pixels": int((~valid).sum()),
         "tags": {},
     }
