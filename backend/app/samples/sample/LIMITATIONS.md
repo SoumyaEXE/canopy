@@ -14,4 +14,6 @@
 
 **Threshold sensitivity.** Move the threshold slider and watch every number change. The tool reports the result of a choice, not a ground truth.
 
+**Local calibration needs labels.** The optional local model only runs after a validation patch has enough matched and unmatched examples. Its estimate is specific to that imagery and patch; it must not be treated as a general model of trees or transferred to another scene.
+
 **No carbon estimate.** Converting crown area to biomass requires species-specific allometric equations, wood density values, local calibration plots, and a root-to-shoot ratio. This tool has none of these, so it does not output tonnes of CO2, biomass, or credit figures, not even roughly.

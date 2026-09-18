@@ -126,7 +126,7 @@ export function PipelinePage({ result }: { result: JobResult }) {
             <p className="text-body-2-regular text-text-secondary">{stage.caption}</p>
           </Panel>
           <Panel className="gap-1">
-            <PanelHeader eyebrow="Recorded in manifest.json" title="Numbers at this stage" className="mb-1" />
+            <PanelHeader eyebrow="From this run" title="Numbers at this stage" className="mb-1" />
             <dl className="flex flex-col">
               {Object.entries(stage.stats).map(([k, v]) => (
                 <KeyValue key={k} k={k} v={<span className="tabular-nums">{String(v)}</span>} />

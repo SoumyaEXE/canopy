@@ -49,15 +49,16 @@
       "medium": "0.45 to 0.7"
     },
     "count_range": [
-      479,
-      585
+      1032,
+      1182
     ],
     "count_range_rule": "lower = high + medium; upper = high + medium + 2 * low (low-confidence regions are usually merged crowns)",
     "counts": {
-      "high": 275,
-      "low": 53,
-      "medium": 204
+      "high": 691,
+      "low": 75,
+      "medium": 341
     },
+    "detector_signal": "not used",
     "separation_signal": "distance-transform value at centroid / equivalent radius, capped at 1",
     "shadow_signal": "1 if height/diameter in (0.5, 5.0), 0.4 if measured but outside, 0 if not measured",
     "size_signal": "1 - |area - median(8 nearest)| / (3 * max(1.4826*MAD, 0.25*median)), floored at 0",
@@ -69,6 +70,7 @@
     }
   },
   "created_utc": "2026-09-14T00:00:00Z",
+  "detector_used": "classical",
   "determinism": "No step uses randomness. Crown IDs follow watershed marker order (row, then column). JSON keys are sorted.",
   "grounding": {
     "band_normalization_divisors": [
@@ -92,7 +94,7 @@
       "m_per_px_min": 0.457912,
       "relative_variation_pct": 0.0047
     },
-    "tile_fetch_utc": "2026-09-15T03:28:20Z",
+    "tile_fetch_utc": "2026-09-18T13:43:51Z",
     "tile_range": {
       "count": 12,
       "x0": 126738,
@@ -147,19 +149,25 @@
     "width": 672
   },
   "segmentation": {
-    "distance_sigma_px": 1.6378,
-    "markers": 669,
+    "blob_max_radius_m": 6.0,
+    "blob_min_radius_m": 1.5,
+    "blob_overlap": 0.3,
+    "blob_reach_radii": 1.4,
+    "blob_threshold": 0.02,
+    "blobs_total": 1234,
+    "detector": "classical",
+    "marker_source": "Laplacian-of-Gaussian blobs on clip(index - threshold, 0) x (0.5 + brightness)",
+    "markers": 1183,
     "max_crown_area_m2": 400.0,
-    "min_crown_area_m2": 7.0686,
+    "min_crown_area_m2": 1.7671,
     "min_solidity": 0.35,
-    "peak_min_distance_px": 3,
-    "regions_kept": 532,
-    "regions_rejected": 137,
-    "regions_total": 669,
+    "regions_kept": 1107,
+    "regions_rejected": 76,
+    "regions_total": 1183,
     "rejection_reasons": {
       "low_solidity": 0,
       "too_large": 0,
-      "too_small": 137
+      "too_small": 76
     }
   },
   "software": {
@@ -179,16 +187,16 @@
     "canopy_area_m2": 22999.8,
     "canopy_cover_pct": 20.8,
     "confidence_breakdown": {
-      "high": 275,
-      "low": 53,
-      "medium": 204
+      "high": 691,
+      "low": 75,
+      "medium": 341
     },
-    "crown_count": 532,
+    "crown_count": 1107,
     "crown_count_range": [
-      479,
-      585
+      1032,
+      1182
     ],
-    "edge_crowns": 32,
+    "edge_crowns": 23,
     "height_available": false,
     "height_mean_m": null,
     "height_measured_count": 0,
@@ -196,9 +204,9 @@
     "height_p90_m": null,
     "height_unavailable_reason": "Height estimation unavailable: acquisition time unknown.",
     "heights_m": [],
-    "mean_crown_area_m2": 42.3,
-    "median_crown_diameter_m": 5.9,
-    "rejected_regions": 137
+    "mean_crown_area_m2": 16.4,
+    "median_crown_diameter_m": 3.8,
+    "rejected_regions": 76
   },
   "vegetation_index": {
     "bimodality_coefficient": 0.5647,
@@ -212,9 +220,10 @@
     "threshold_used": 0.28307234251406044
   },
   "warnings": [
-    "137 regions were rejected by size or shape filters. Toggle the Rejected layer to see them.",
-    "53 crowns have low confidence; these are most often merged crowns in dense canopy.",
-    "32 crowns touch the area boundary; they are counted, but their areas are truncated.",
+    "This imagery is 0.46 m per pixel. The AI tree detector was trained on 0.1 m imagery and is unreliable above 0.2 m, so classical blob detection was used instead (see the Pipeline tab).",
+    "76 regions were rejected by size or shape filters. Toggle the Rejected layer to see them.",
+    "75 crowns have low confidence; these are most often merged crowns in dense canopy.",
+    "23 crowns touch the area boundary; they are counted, but their areas are truncated.",
     "Basemap imagery has no reliable acquisition date; the trees may have changed since capture."
   ]
 }

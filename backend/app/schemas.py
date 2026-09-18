@@ -8,6 +8,7 @@ from pydantic import BaseModel, Field
 
 
 class JobParams(BaseModel):
+    detector: Literal["hybrid", "classical"] = "hybrid"
     min_crown_diameter_m: float = Field(3.0, ge=1.0, le=20.0)
     veg_index: Literal["exg", "vari", "ndvi"] = "exg"
     threshold_mode: Literal["otsu", "manual"] = "otsu"

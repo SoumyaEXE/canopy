@@ -291,7 +291,7 @@ def write_stage_images(
 
     if boxes is not None:
         det = np.zeros((h, w, 4), dtype=np.uint8)
-        t = max(1, round(min(h, w) / 400))
+        t = max(2, round(min(h, w) / 300))
         for x0, y0, x1, y1, s in boxes:
             a = int(110 + 145 * float(s))
             _draw_rect(det, x0, y0, x1, y1, (*BOX_RGB, a), t)
