@@ -7,6 +7,7 @@ import { EmptyState, Panel, PanelHeader, formatRelative } from "@/components/can
 import type { JobParams, JobStatus, Run } from "@/types";
 
 const PARAM_LABEL: Record<keyof JobParams, string> = {
+  detector: "Detector",
   min_crown_diameter_m: "Min crown",
   veg_index: "Index",
   threshold_mode: "Threshold",
@@ -20,6 +21,7 @@ function formatParam(key: keyof JobParams, p: JobParams): string {
   const v = p[key];
   if (key === "min_crown_diameter_m") return `${Number(v).toFixed(1)} m`;
   if (key === "veg_index") return String(v).toUpperCase();
+  if (key === "detector") return v === "classical" ? "classical" : "auto";
   if (key === "threshold_mode") return p.threshold_mode === "manual" ? `manual ${p.threshold_manual}` : "Otsu";
   if (key === "enable_height") return v ? "on" : "off";
   if (key === "acquisition_datetime_utc") return v ? String(v).replace("T", " ").replace(":00Z", " UTC") : "unknown";
@@ -28,7 +30,7 @@ function formatParam(key: keyof JobParams, p: JobParams): string {
 
 /** What changed from the previous run, so a history row explains itself. */
 function paramChanges(run: Run, prev: Run | undefined): string[] {
-  const keys: (keyof JobParams)[] = ["min_crown_diameter_m", "veg_index", "threshold_mode", "tile_zoom", "enable_height", "acquisition_datetime_utc"];
+  const keys: (keyof JobParams)[] = ["detector", "min_crown_diameter_m", "veg_index", "threshold_mode", "tile_zoom", "enable_height", "acquisition_datetime_utc"];
   if (!prev) return keys.map((k) => `${PARAM_LABEL[k]} ${formatParam(k, run.params)}`).slice(0, 3);
   return keys.filter((k) => formatParam(k, run.params) !== formatParam(k, prev.params)).map((k) => `${PARAM_LABEL[k]} ${formatParam(k, prev.params)} → ${formatParam(k, run.params)}`);
 }

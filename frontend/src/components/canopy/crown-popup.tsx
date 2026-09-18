@@ -55,6 +55,7 @@ export function CrownPopup({ crown, heightEnabled }: { crown: CrownProps; height
       ) : (
         <dl className="flex flex-col gap-1">
           <Row label="Confidence" value={`${BUCKET_LABEL[crown.confidence_bucket]} (${crown.confidence.toFixed(2)})`} />
+          {crown.signals.detector != null && <Row indent label="AI detector" value={crown.signals.detector.toFixed(2)} />}
           <Row indent label="Shape" value={crown.signals.shape.toFixed(2)} />
           <Row indent label="Size fit" value={crown.signals.size.toFixed(2)} />
           <Row indent label="Separation" value={crown.signals.separation.toFixed(2)} />

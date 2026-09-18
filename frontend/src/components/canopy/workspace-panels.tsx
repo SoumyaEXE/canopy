@@ -31,6 +31,7 @@ function SectionTitle({ children, action }: { children: React.ReactNode; action?
 }
 
 const PARAM_KEYS: (keyof JobParams)[] = [
+  "detector",
   "min_crown_diameter_m",
   "veg_index",
   "threshold_mode",

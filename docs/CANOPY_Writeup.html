@@ -1,0 +1,89 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>CANOPY writeup</title>
+<style>
+@page { size: A4; margin: 13mm 15mm 12mm; }
+* { box-sizing: border-box; }
+body { font-family: "Segoe UI", Arial, sans-serif; font-size: 9.35pt; line-height: 1.38; color: #1b1f1c; margin: 0; }
+h1 { font-size: 17pt; margin: 0 0 1mm; letter-spacing: -0.2px; }
+.sub { color: #55605a; margin: 0 0 3mm; font-size: 9.5pt; }
+h2 { font-size: 10.8pt; margin: 3.2mm 0 1.2mm; padding-bottom: 0.6mm; border-bottom: 1.2px solid #2f6b3f; color: #1f4d2c; }
+p { margin: 0 0 1.6mm; }
+ul { margin: 0 0 1.6mm; padding-left: 4.6mm; }
+li { margin-bottom: 0.7mm; }
+b { color: #111; }
+code { font-family: Consolas, monospace; font-size: 8.6pt; background: #eef2ee; padding: 0 2px; border-radius: 2px; }
+.flow { display: flex; flex-wrap: wrap; align-items: center; gap: 1.2mm; margin: 1.5mm 0 2mm; font-size: 8.3pt; }
+.flow span.s { border: 1px solid #2f6b3f; background: #f1f6f1; border-radius: 3px; padding: 0.8mm 1.8mm; }
+.flow span.a { color: #2f6b3f; font-weight: bold; }
+table { border-collapse: collapse; width: 100%; font-size: 8.7pt; margin: 1mm 0 2mm; }
+td, th { border: 1px solid #cfd8d0; padding: 0.9mm 1.6mm; vertical-align: top; text-align: left; }
+th { background: #eef3ee; }
+.two { display: grid; grid-template-columns: 1fr 1fr; gap: 5mm; }
+.pb { break-before: page; }
+.note { font-size: 8.4pt; color: #55605a; }
+</style></head><body>
+
+<h1>CANOPY: finding tree crowns, and saying how sure it is</h1>
+<p class="sub">Soumyadeep Dey · solo submission · repo: github.com/SoumyaEXE/canopy</p>
+
+<h2>What I built and why</h2>
+<p>CANOPY takes an area (drawn on a map, or a GeoJSON, KML, KMZ or GeoTIFF file) and outlines the tree crowns it can see in satellite imagery. It reports canopy cover, a tree count given as a <b>range</b>, a confidence score for every crown, shadow-based heights only when the maths is actually possible, and a zip file that records every parameter behind every number.</p>
+<p>Early on I made a call: I would rather ship a tool that is honest about what it doesn't know than one that shows neat numbers it can't back up. Most of the design follows from that. Counts are ranges. Rejected regions get their own map layer instead of vanishing. Height switches off when the capture time is unknown. There's no carbon figure at all.</p>
+
+<h2>Architecture and workflow</h2>
+<p><b>Frontend:</b> React 19 + TypeScript + Vite, Tailwind v4 with BoardUI components, MapLibre GL for the map. <b>Backend:</b> FastAPI (Python 3.12) running a background job per analysis. The frontend polls for stage progress. Projects and run history live in SQLite, with output files on disk.</p>
+<div class="flow">
+<span class="s">AOI / GeoTIFF</span><span class="a">→</span><span class="s">validate &amp; UTM area</span><span class="a">→</span><span class="s">fetch Esri tiles (z18, ≤64)</span><span class="a">→</span><span class="s">vegetation index</span><span class="a">→</span><span class="s">Otsu mask + clean-up</span><span class="a">→</span><span class="s">watershed crowns</span><span class="a">→</span><span class="s">filter (kept / rejected)</span><span class="a">→</span><span class="s">shadow height (if time known)</span><span class="a">→</span><span class="s">confidence + range</span><span class="a">→</span><span class="s">GeoJSON, CSV, audit.zip</span>
+</div>
+<ul>
+<li><b>Input.</b> Broken geometry gets repaired. Multi-part polygons are rejected, not quietly merged. Area is measured in the local UTM zone and capped at 1 km². A GeoTIFF with no coordinate system is refused, because I won't guess where it is.</li>
+<li><b>Imagery.</b> Esri World Imagery tiles at zoom 18 are stitched and cropped. If a tile still fails after retries, the whole job fails. I didn't want a blank patch to read as "no trees here".</li>
+<li><b>Canopy mask.</b> Excess Green (<code>2g−r−b</code>) by default. VARI is optional, and NDVI is used if a near-infrared band exists. Otsu picks the threshold, and Sarle's bimodality coefficient (cutoff 5/9) flags when that split is forced rather than real.</li>
+<li><b>Crowns.</b> A smoothed distance transform seeds a marker-controlled watershed, which splits touching canopy. Regions that are too small, larger than 400 m², or too irregular are rejected but still counted and drawn.</li>
+<li><b>Height.</b> The NOAA sun-position algorithm plus three shadow rays per crown gives <code>height = shadow × tan(sun elevation)</code>. It only runs when the capture time is known.</li>
+<li><b>Confidence.</b> A weighted mix of shape (0.30), size vs. its 8 nearest neighbours (0.25), separation (0.25) and shadow plausibility (0.20). Range = high+medium up to high+medium+2×low, because low-confidence blobs are often two merged trees.</li>
+<li><b>Validation mode.</b> You mark trees yourself in a patch (at least 15 clicks, with detections hidden). It returns precision, recall, F1 and a correction factor. It can also fit a tiny NumPy-only logistic regression for a locally calibrated count.</li>
+</ul>
+
+<h2>Key technical decisions</h2>
+<table>
+<tr><th style="width:31%">Decision</th><th>Why</th></tr>
+<tr><td>Classical computer vision, no deep learning model</td><td>No labelled data for this task, a short deadline, and free CPU hosting. A classical pipeline is explainable parameter by parameter, and it's deterministic. The trade-off is lower accuracy in dense forest.</td></tr>
+<tr><td>Deterministic outputs</td><td>Sorted JSON keys, fixed zip timestamps, rounded coordinates. The same input gives a byte-identical <code>crowns.geojson</code>, and a test checks it.</td></tr>
+<tr><td>Ranges and confidence instead of one count</td><td>A single number hides the main failure (merged crowns). The range makes that uncertainty visible.</td></tr>
+<tr><td>Refuse instead of guess</td><td>No default capture time, no assumed CRS, no carbon/biomass conversion. Each of those would produce numbers that look precise and aren't.</td></tr>
+<tr><td>Checked the scale against a real object</td><td>I measured Victoria Memorial, Kolkata, from the mosaic: area came within ~2% of published figures, and each axis within 10%.</td></tr>
+</table>
+
+<h2 class="pb">What worked</h2>
+<ul>
+<li><b>Open woodland.</b> On the sample area (Monfragüe dehesa, Spain: scattered holm oaks on dry grass) it finds 532 crowns, range 479–585, with 20.8% cover. That matches what I see when I look at the imagery.</li>
+<li><b>Threshold-quality check.</b> My first rule (between-class / total variance) couldn't tell a real split from a forced one. It read ~0.64 even on a single Gaussian. Sarle's coefficient fixed that: a near-uniform grass scene (the Maidan, Kolkata) correctly reads "low", and the sample reads "high".</li>
+<li><b>Testing.</b> 36 backend unit tests pass, including determinism. An end-to-end API script passes 19/19 checks across drawn AOI, KML, KMZ, GeoJSON, GeoTIFF, bad-CRS rejection, oversize errors, validation and audit bundle contents. The frontend builds cleanly, and I ran through the main flows in headless Chromium, including a 390 px phone layout.</li>
+<li><b>Audit trail.</b> Every run keeps its inputs, parameters, manifest and outputs, so you can reopen and compare old runs.</li>
+</ul>
+
+<h2>What didn't work (or only partly)</h2>
+<ul>
+<li><b>Lawns and crops.</b> My first test area in Kolkata showed ExG marks irrigated lawns as canopy. RGB alone can't separate a lawn from a tree canopy, so I moved the sample to a dry-grass site. That's a workaround, not a fix.</li>
+<li><b>Valley-depth threshold confidence</b> was unstable, and I dropped it.</li>
+<li><b>Heights in the live demo.</b> Esri basemap tiles have no reliable capture time, so height is off for nearly every drawn area. The feature really only works for GeoTIFFs with a timestamp, or if the user types the time in.</li>
+<li><b>Deployment was messy.</b> I tried Render (free tier sleeps, no persistent disk) and a Hugging Face Space (needed a dummy Gradio wrapper), then ended up on my own VM behind nginx. The Docker image was never test-built.</li>
+</ul>
+
+<h2>Known limitations (honest list)</h2>
+<ul>
+<li><b>No real accuracy numbers yet.</b> Validation mode works, but I haven't done a proper hand-marked validation on an open and a dense patch. "Matches visual inspection" is my eyeballing, not a measured precision/recall. This is the biggest gap.</li>
+<li><b>Dense forest undercounts.</b> In closed canopy, touching crowns merge into one. The count range tries to show this, but the "2× low" upper bound is a rule of thumb, not something I derived statistically.</li>
+<li><b>Confidence weights are hand-picked.</b> 0.30/0.25/0.25/0.20 and the high/medium cutoffs aren't calibrated against ground truth. "High confidence" means "looks like a clean crown", not "is 90% likely to be a tree".</li>
+<li><b>"Tree" really means "green blob of tree size".</b> Hedges, shrubs, green roofs and crops can pass. There's no species, age, health, understory, or carbon estimate, and that's on purpose.</li>
+<li><b>Heights</b> assume flat ground and a clear shadow. They're also biased low by roughly crown radius × tan(sun elevation), since the shadow is measured from the crown edge.</li>
+<li><b>Imagery.</b> Tile capture dates are unknown and can vary across a mosaic. I haven't fully checked Esri's terms for a public demo.</li>
+<li><b>Scale and ops.</b> Area is capped at 1 km² / 64 tiles. Jobs live in memory, so a restart loses them. It has to run as a single worker. Projects need a persistent disk or they reset on redeploy. The VM service currently allows CORS from any origin, which was a shortcut to get the demo working and should be locked down. Tile-cache hits aren't recorded in the manifest.</li>
+<li><b>Smaller shortcuts.</b> The upload component shows a simulated progress ring before the real upload starts. The calibration model is tiny, only valid for the patch it was trained on, and needs at least 4 matched and 4 unmatched examples. The wordmark font's web licence isn't confirmed yet.</li>
+</ul>
+
+<h2>What I'd do next</h2>
+<p>First, a proper hand-marked validation on two contrasting patches, with the numbers published in the app. Then calibrate the confidence weights against those labels, add a job store (Redis) so restarts don't lose work, and try a small pretrained crown detector (e.g. DeepForest) as an optional second opinion next to the classical pipeline.</p>
+<p class="note">Built with substantial help from AI coding assistants (Claude Code, Cursor). I made the design decisions, checked the scale and threshold behaviour by hand, and reviewed the output. Full method: <code>docs/METHOD.md</code>; build notes: <code>NOTES.md</code>.</p>
+</body></html>

@@ -5,6 +5,7 @@ import {
   RiCheckboxMultipleLine,
   RiDashboardLine,
   RiErrorWarningLine,
+  RiFlowChart,
   RiFolderLine,
   RiHistoryLine,
   RiLayoutLeftLine,
@@ -32,6 +33,7 @@ import type { ProjectTab, Route } from "@/lib/router";
 import { AuditPage } from "@/pages/audit";
 import { CrownsPage } from "@/pages/crowns";
 import { OverviewPage } from "@/pages/overview";
+import { PipelinePage } from "@/pages/pipeline";
 import { RunsPage } from "@/pages/runs";
 import type { JobParams, ValidationResult } from "@/types";
 import { cx } from "@/utils/cx";
@@ -40,6 +42,7 @@ type LngLat = [number, number];
 type NavKey = ProjectTab | "projects" | "limitations";
 
 const DEFAULT_PARAMS: JobParams = {
+  detector: "hybrid",
   min_crown_diameter_m: 3,
   veg_index: "exg",
   threshold_mode: "otsu",
@@ -53,6 +56,7 @@ const TAB_META: Record<ProjectTab, string> = {
   overview: "Overview",
   map: "Map",
   crowns: "Crowns",
+  pipeline: "Pipeline",
   validation: "Validation",
   runs: "Runs",
   audit: "Audit",
@@ -194,6 +198,7 @@ export function ProjectView({
         { key: "overview", label: "Overview", icon: RiDashboardLine, badge: p.result?.warnings.length || undefined, alert: !!p.result?.warnings.length },
         { key: "map", label: "Map", icon: RiMap2Line },
         { key: "crowns", label: "Crowns", icon: RiPlantLine, badge: p.result?.summary.crown_count },
+        { key: "pipeline", label: "Pipeline", icon: RiFlowChart },
         { key: "validation", label: "Validation", icon: RiCheckboxMultipleLine },
         { key: "runs", label: "Runs", icon: RiHistoryLine, badge: p.runs.length || undefined },
       ],
@@ -430,6 +435,7 @@ export function ProjectView({
                 onView={(r) => navigate({ name: "project", id: projectId, tab: "overview", run: r.id === project?.latest_succeeded_run_id ? undefined : r.id })}
               />
             )}
+            {tab === "pipeline" && (p.result ? <PipelinePage key={p.result.job_id} result={p.result} /> : <TableSkeleton />)}
             {tab === "audit" && (p.result ? <AuditPage result={p.result} /> : <TableSkeleton />)}
           </div>
           {running && p.liveStatus && (

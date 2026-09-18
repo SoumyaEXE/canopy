@@ -8,6 +8,9 @@ import numpy as np
 from scipy.spatial import cKDTree
 
 WEIGHTS = {"shape": 0.30, "size": 0.25, "separation": 0.25, "shadow": 0.20}
+# With the AI detector, its own score is the best single signal of "this is a tree"; geometry still
+# flags merged or truncated outlines.
+WEIGHTS_WITH_DETECTOR = {"detector": 0.45, "shape": 0.15, "size": 0.15, "separation": 0.10, "shadow": 0.15}
 HIGH, MEDIUM = 0.70, 0.45
 NEIGHBOURS = 8
 # Height-to-crown-diameter ratios observed for most trees fall within this band.
@@ -18,11 +21,13 @@ LOW_REASONS = {
     "size": "Low confidence: this crown is far larger or smaller than its neighbours, so it is likely merged with, or split from, another crown.",
     "separation": "Low confidence: this region is likely two or more merged crowns.",
     "shadow": "Low confidence: no measurable shadow confirms that this is a tall object rather than low vegetation.",
+    "detector": "Low confidence: the AI tree detector itself was unsure this is a tree.",
 }
 
 
 def score(crowns: list[dict], height_enabled: bool) -> dict:
-    weights = dict(WEIGHTS)
+    has_detector = bool(crowns) and all(c.get("detector_score") is not None for c in crowns)
+    weights = dict(WEIGHTS_WITH_DETECTOR if has_detector else WEIGHTS)
     if not height_enabled:
         # Shadow agreement cannot be assessed at all; renormalize rather than penalize every crown equally.
         w = weights.pop("shadow")
@@ -67,6 +72,8 @@ def score(crowns: list[dict], height_enabled: bool) -> dict:
             shadow_s = 1.0 if PLAUSIBLE_H_TO_D[0] <= ratio <= PLAUSIBLE_H_TO_D[1] else 0.4
 
         signals = {"shape": shape_s, "size": size_s, "separation": sep_s, "shadow": shadow_s}
+        if has_detector:
+            signals["detector"] = float(c["detector_score"])
         total = sum(weights[k] * v for k, v in signals.items())
         bucket = "high" if total >= HIGH else "medium" if total >= MEDIUM else "low"
         c["confidence"] = round(total, 4)
@@ -91,4 +98,5 @@ def score(crowns: list[dict], height_enabled: bool) -> dict:
         "size_signal": "1 - |area - median(8 nearest)| / (3 * max(1.4826*MAD, 0.25*median)), floored at 0",
         "separation_signal": "distance-transform value at centroid / equivalent radius, capped at 1",
         "shadow_signal": f"1 if height/diameter in {PLAUSIBLE_H_TO_D}, 0.4 if measured but outside, 0 if not measured",
+        "detector_signal": "DeepForest box score (0 to 1)" if has_detector else "not used",
     }

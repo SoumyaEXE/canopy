@@ -44,6 +44,28 @@ export function DetectionControls({ params, onParamsChange, result, disabled }: 
   return (
     <div className="flex flex-col gap-6">
       <div className="flex flex-col gap-1.5">
+        <FieldLabel>Crown detector</FieldLabel>
+        <SegmentedControl
+          aria-label="Crown detector"
+          selectedKeys={[params.detector ?? "hybrid"]}
+          onSelectionChange={(keys) => {
+            const k = [...keys][0];
+            if (k) set({ detector: k as JobParams["detector"] });
+          }}
+          isDisabled={disabled}
+          className="self-start"
+        >
+          <SegmentedControlItem id="hybrid">Auto</SegmentedControlItem>
+          <SegmentedControlItem id="classical">Classical</SegmentedControlItem>
+        </SegmentedControl>
+        <Hint>
+          {params.detector === "classical"
+            ? "Blob-detected crown centres, then watershed on the canopy mask. No model."
+            : "DeepForest AI on imagery of 0.2 m per pixel or finer, with outlines from the canopy mask. Coarser imagery, such as satellite basemaps, uses classical blob detection, which measured better there."}
+        </Hint>
+      </div>
+
+      <div className="flex flex-col gap-1.5">
         <Slider
           label="Min crown diameter"
           minValue={1}
@@ -55,7 +77,7 @@ export function DetectionControls({ params, onParamsChange, result, disabled }: 
           thumbLabel="Minimum crown diameter in metres"
           isDisabled={disabled}
         />
-        <Hint>Smaller regions are rejected; also sets watershed marker spacing.</Hint>
+        <Hint>Smaller regions are rejected; also sets the smallest crown the blob detector looks for.</Hint>
       </div>
 
       <div className="flex flex-col gap-1.5">

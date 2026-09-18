@@ -30,6 +30,7 @@ ALLOWED_FILES = {
     "canopy_mask.png": "image/png",
     "overlay.png": "image/png",
     "audit.zip": "application/zip",
+    **{f"stage_{k}.png": "image/png" for k in ("index", "threshold", "mask", "detections", "markers", "segments", "crowns")},
 }
 
 

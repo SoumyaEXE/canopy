@@ -39,6 +39,7 @@ def segment(canopy: np.ndarray, m_per_px: float, min_crown_diameter_m: float) ->
         "distance_sigma_px": round(float(sigma_px), 4),
         "peak_min_distance_px": int(min_distance_px),
         "markers": int(len(coords)),
+        "_marker_coords": coords,
     }
     return labels, distance, info
 
@@ -159,3 +160,79 @@ def extract(
         "rejection_reasons": reasons,
     }
     return crowns, rejected, info
+
+
+# ---- scale-aware blob markers ---------------------------------------------------------------------------
+# The distance transform only finds a crown centre where the canopy mask has a waist, so touching crowns
+# merge. Sunlit crowns are also brighter and greener at the centre than at the edge, so a
+# Laplacian-of-Gaussian blob detector on "greenness above threshold × brightness" finds one blob per crown
+# at the right scale, even inside a continuous mask. Blob radii run from half the minimum crown diameter
+# up to BLOB_MAX_RADIUS_M.
+
+BLOB_MAX_RADIUS_M = 6.0
+BLOB_NUM_SIGMA = 12
+BLOB_THRESHOLD = 0.02
+BLOB_OVERLAP = 0.3
+# Each crown may extend this many blob radii from its blob centre, so one blob cannot flood a whole stand.
+BLOB_REACH = 1.4
+
+
+def blob_response(index: np.ndarray, rgb: np.ndarray, threshold: float) -> np.ndarray:
+    img = np.clip(index - threshold, 0.0, None) * (0.5 + rgb.mean(axis=-1))
+    lo, span = float(img.min()), float(np.ptp(img))
+    return ((img - lo) / span if span > 0 else np.zeros_like(img)).astype(np.float64)
+
+
+def segment_blobs(
+    index: np.ndarray, rgb: np.ndarray, threshold: float, canopy: np.ndarray, m_per_px: float, min_crown_diameter_m: float
+) -> tuple[np.ndarray, np.ndarray, dict]:
+    from skimage.feature import blob_log
+
+    resp = blob_response(index, rgb, threshold)
+    min_sigma = max(0.7, (min_crown_diameter_m / 2.0) / m_per_px / math.sqrt(2))
+    max_sigma = max(min_sigma + 0.5, BLOB_MAX_RADIUS_M / m_per_px / math.sqrt(2))
+    blobs = blob_log(resp, min_sigma=min_sigma, max_sigma=max_sigma, num_sigma=BLOB_NUM_SIGMA,
+                     threshold=BLOB_THRESHOLD, overlap=BLOB_OVERLAP, exclude_border=False)
+    h, w = canopy.shape
+    keep = []
+    for r, c, s in blobs:
+        ri, ci = int(round(r)), int(round(c))
+        if 0 <= ri < h and 0 <= ci < w and canopy[ri, ci]:
+            keep.append((ri, ci, float(s) * math.sqrt(2)))
+    keep.sort(key=lambda b: (b[0], b[1]))
+
+    markers = np.zeros((h, w), dtype=np.int32)
+    reach = np.zeros((h, w), dtype=bool)
+    for i, (r, c, rad) in enumerate(keep, start=1):
+        markers[r, c] = i
+        R = int(math.ceil(rad * BLOB_REACH))
+        r0, r1, c0, c1 = max(0, r - R), min(h, r + R + 1), max(0, c - R), min(w, c + R + 1)
+        yy, xx = np.ogrid[r0 - r : r1 - r, c0 - c : c1 - c]
+        reach[r0:r1, c0:c1] |= yy * yy + xx * xx <= (rad * BLOB_REACH) ** 2
+    smooth = ndi.gaussian_filter(resp, sigma=max(1.0, min_sigma / 2))
+    labels = watershed(-smooth, markers, mask=canopy & reach) if keep else np.zeros((h, w), dtype=np.int32)
+    info = {
+        "marker_source": "Laplacian-of-Gaussian blobs on clip(index - threshold, 0) x (0.5 + brightness)",
+        "blob_min_radius_m": round(min_sigma * math.sqrt(2) * m_per_px, 3),
+        "blob_max_radius_m": round(max_sigma * math.sqrt(2) * m_per_px, 3),
+        "blob_threshold": BLOB_THRESHOLD,
+        "blob_overlap": BLOB_OVERLAP,
+        "blob_reach_radii": BLOB_REACH,
+        "blobs_total": int(len(blobs)),
+        "markers": len(keep),
+        "_marker_coords": np.array([(r, c) for r, c, _ in keep], dtype=np.int64).reshape(-1, 2),
+        "_response": resp,
+    }
+    return labels.astype(np.int32), separation_map(labels), info
+
+
+def separation_map(labels: np.ndarray) -> np.ndarray:
+    """Distance to the nearest pixel that is not this crown (background or a neighbouring crown)."""
+    edges = np.zeros(labels.shape, dtype=bool)
+    dv = labels[:-1, :] != labels[1:, :]
+    dh = labels[:, :-1] != labels[:, 1:]
+    edges[:-1, :] |= dv
+    edges[1:, :] |= dv
+    edges[:, :-1] |= dh
+    edges[:, 1:] |= dh
+    return ndi.distance_transform_edt((labels > 0) & ~edges).astype(np.float64)

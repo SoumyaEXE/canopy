@@ -1,4 +1,4 @@
-﻿"""run_pipeline(): the orchestrator. Each stage reports progress by name."""
+"""run_pipeline(): the orchestrator. Each stage reports progress by name."""
 
 from __future__ import annotations
 
@@ -11,7 +11,7 @@ from typing import Callable
 import numpy as np
 
 from .. import config
-from . import audit, confidence, crowns, geo, ingest, shadows, tiles, vegetation
+from . import audit, confidence, crowns, detector, geo, ingest, shadows, tiles, vegetation
 from .errors import PipelineError
 
 STAGES = [
@@ -132,9 +132,37 @@ def run_pipeline(
     cover_pct = 100.0 * canopy_px / aoi_px
 
     # ---- 5. Crowns ------------------------------------------------------------------
-    progress("segmenting_crowns", "Running watershed segmentation")
-    labels, distance, seg_info = crowns.segment(canopy, m, min_d)
-    kept, rejected, filt_info = crowns.extract(labels, distance, aoi, scene.transform, scene.crs, m, min_d)
+    # "hybrid" (shown as Auto): DeepForest where the imagery is fine enough for it, blob markers otherwise.
+    wanted = params.get("detector", "hybrid")
+    detector_used, boxes, marker_coords, marker_response = "classical", None, None, None
+    if wanted == "hybrid":
+        ok, why = detector.available()
+        if not ok:
+            warnings.append(f"The AI tree detector is not installed on this server ({why}), so classical blob detection was used.")
+        elif m > detector.MAX_GSD_M:
+            warnings.append(
+                f"This imagery is {m:.2f} m per pixel. The AI tree detector was trained on 0.1 m imagery and is unreliable "
+                f"above {detector.MAX_GSD_M} m, so classical blob detection was used instead (see the Pipeline tab)."
+            )
+        else:
+            progress("segmenting_crowns", "Detecting trees with DeepForest")
+            boxes, det_info = detector.detect(scene.rgb, m)
+            progress("segmenting_crowns", "Shaping crown outlines from the canopy mask")
+            labels, distance, hyb_info = detector.crowns_from_boxes(boxes, canopy, aoi, m)
+            det_scores = hyb_info.pop("scores")
+            seg_info = {"detector": "hybrid", **det_info, **hyb_info, **detector.model_version()}
+            detector_used = "hybrid"
+    if detector_used == "classical":
+        progress("segmenting_crowns", "Finding crown centres and running watershed")
+        labels, distance, seg_info = crowns.segment_blobs(index, scene.rgb, threshold, canopy, m, min_d)
+        marker_coords = seg_info.pop("_marker_coords")
+        marker_response = seg_info.pop("_response")
+        seg_info = {"detector": "classical", **seg_info}
+    min_d_filter = min(min_d, detector.MIN_CROWN_DIAMETER_M) if detector_used == "hybrid" else min_d / 2.0
+    kept, rejected, filt_info = crowns.extract(labels, distance, aoi, scene.transform, scene.crs, m, min_d_filter)
+    if detector_used == "hybrid":
+        for c in kept:
+            c["detector_score"] = round(det_scores.get(c["label"], 0.0), 4)
 
     # ---- 6. Shadows -----------------------------------------------------------------
     progress("measuring_shadows", "Tracing shadows for height")
@@ -186,6 +214,11 @@ def run_pipeline(
     audit.write_geojson(job_dir / "rejected.geojson", [audit.rejected_feature(r) for r in rejected])
     audit.write_csv(job_dir / "crowns.csv", kept)
     audit.write_images(job_dir, scene.rgb, canopy, aoi, labels, kept)
+    raw_mask = (index > threshold) & aoi
+    stage_files = audit.write_stage_images(
+        job_dir, index=index, raw=raw_mask, canopy=canopy, aoi=aoi, response=marker_response, markers=marker_coords,
+        boxes=boxes, labels=labels, crowns=kept, rejected=rejected,
+    )
 
     n = len(kept)
     areas = [c["area_m2"] for c in kept]
@@ -267,6 +300,10 @@ def run_pipeline(
         "overlay_png_url": f"/api/jobs/{job_id}/overlay.png",
         "audit_zip_url": f"/api/jobs/{job_id}/audit.zip",
     }
+    result["pipeline"] = _pipeline_view(
+        job_id, stage_files, detector_used, scene, parsed, veg, index_range, threshold, mode, otsu, raw_mask, canopy,
+        aoi, mask_info, seg_info, filt_info, conf_info, cover_pct, n,
+    )
 
     manifest = {
         "job_id": job_id,
@@ -284,6 +321,7 @@ def run_pipeline(
         "vegetation_index": {"name": veg, **otsu, "threshold_used": threshold, "threshold_mode": mode},
         "canopy_mask": mask_info,
         "segmentation": {**seg_info, **filt_info},
+        "detector_used": detector_used,
         "solar": solar,
         "height": {"enabled": height_enabled, "unavailable_reason": height_reason, **(shadow_info or {})},
         "confidence": conf_info,
@@ -294,6 +332,105 @@ def run_pipeline(
     audit.write_bundle(job_dir, manifest, result, LIMITATIONS_MD)
     (job_dir / "result.json").write_text(audit.dumps_deterministic(result), encoding="utf-8")
     return result
+
+
+def _pipeline_view(job_id, files, detector_used, scene, parsed, veg, index_range, threshold, mode, otsu, raw_mask,
+                   canopy, aoi, mask_info, seg_info, filt_info, conf_info, cover_pct, n) -> dict:
+    """Plain-language description of each stage image, with the numbers that stage produced."""
+    m = scene.m_per_px
+    h, w = canopy.shape
+    aoi_px = max(1, int(aoi.sum()))
+    lo, hi = conf_info["count_range"]
+    src = scene.audit.get("imagery_source", "Uploaded GeoTIFF")
+    index_formula = "2g − r − b on chromatic coordinates" if veg == "exg" else veg.upper()
+    removed_px = int((raw_mask & ~canopy).sum())
+    hybrid = detector_used == "hybrid"
+    stages = {
+        "stage_index.png": (
+            f"{veg.upper()} vegetation index",
+            f"p1–p99 {index_range[0]} to {index_range[1]}",
+            f"Each pixel's greenness from its colour alone ({index_formula}). "
+            "Yellow is greenest, purple least green. Pixels outside the area are dimmed.",
+            {"Index": veg.upper(), "Index p1 / p99": f"{index_range[0]} / {index_range[1]}", "Image": f"{w} × {h} px",
+             "Resolution": f"{m:.3f} m/px"},
+        ),
+        "stage_threshold.png": (
+            "Threshold",
+            f"{mode} at {threshold:.3f}",
+            "Pixels above the threshold are green. Otsu's method picks the split that best separates the two populations "
+            "of index values; the bimodality coefficient says whether there really are two.",
+            {"Threshold": f"{threshold:.4f} ({mode})", "Otsu value": f"{otsu['otsu_value']:.4f}",
+             "Bimodality coefficient": otsu["bimodality_coefficient"], "Threshold confidence": otsu["confidence"],
+             "Pixels above": f"{int(raw_mask.sum()):,} ({100 * raw_mask.sum() / aoi_px:.1f}% of area)"},
+        ),
+        "stage_mask.png": (
+            "Cleaned canopy mask",
+            f"{cover_pct:.1f}% canopy cover",
+            "Opening then closing with a small disk removes speckle and fills pinholes; objects and holes under 1 m² go. "
+            "Green is canopy, red is what the cleaning removed. Canopy area and cover come from this mask.",
+            {"Disk radius": f"{mask_info['morph_disk_radius_px']} px ({mask_info['morph_disk_radius_m']} m)",
+             "Canopy pixels": f"{int(canopy.sum()):,}", "Canopy cover": f"{cover_pct:.1f}%",
+             "Removed by cleaning": f"{removed_px:,} px"},
+        ),
+        "stage_detections.png": (
+            "AI tree detections",
+            f"{seg_info.get('boxes_kept', 0)} trees found",
+            "DeepForest, a RetinaNet trained on hand-labelled airborne imagery, draws a box around every tree it sees. "
+            "Brighter boxes are more confident. Large images run as 400 px patches with 25% overlap, and duplicates "
+            "across patches are merged by non-maximum suppression.",
+            {"Model": seg_info.get("model", "—"),
+             "Boxes (raw / kept)": f"{seg_info.get('boxes_raw', 0)} / {seg_info.get('boxes_kept', 0)}",
+             "Score threshold": seg_info.get("score_threshold", "—"),
+             "Upsampling": f"{seg_info.get('work_scale', 1)}×",
+             "Working image": " × ".join(str(v) for v in seg_info.get("work_shape", [])[::-1]) + " px"},
+        ),
+        "stage_markers.png": (
+            "Crown centres",
+            f"{seg_info.get('markers', 0)} crown centres",
+            "Sunlit crowns are brightest and greenest in the middle. A Laplacian-of-Gaussian blob detector, run at every "
+            "crown size from half the minimum diameter up to the maximum, finds one peak per crown even where crowns touch. "
+            "White dots are the crown centres that fall on canopy; each seeds one watershed region.",
+            {"Blob radius range": f"{seg_info.get('blob_min_radius_m')}–{seg_info.get('blob_max_radius_m')} m",
+             "Blobs found": seg_info.get("blobs_total", 0), "On canopy (markers)": seg_info.get("markers", 0),
+             "Blob threshold": seg_info.get("blob_threshold")},
+        ),
+        "stage_segments.png": (
+            "Crown segments",
+            f"{filt_info['regions_total']} regions",
+            ("Each detection's inscribed ellipse claims pixels; overlapping ellipses are split by relative distance to "
+             "their centres, then each is trimmed to the canopy mask. Where the mask covers under "
+             f"{int(100 * seg_info.get('min_mask_fill', 0))}% of an ellipse, the ellipse itself is the outline.")
+            if hybrid else
+            "Marker-controlled watershed floods outward from each crown centre over the smoothed blob response, inside "
+            f"the canopy mask and within {seg_info.get('blob_reach_radii')} blob radii of the centre. Every colour is one region.",
+            {"Regions": filt_info["regions_total"],
+             **({"Outline from mask": seg_info.get("crowns_mask_trimmed"),
+                 "Outline from ellipse": seg_info.get("crowns_ellipse_only")} if hybrid else {})},
+        ),
+        "stage_crowns.png": (
+            "Filtered and scored crowns",
+            f"{n} crowns, range {lo}–{hi}",
+            "Regions are kept or rejected (grey) by size and solidity, then scored from explainable signals"
+            + (", including the detector's own score" if hybrid else "")
+            + ". Green is high, amber medium, red low confidence.",
+            {"Crowns kept": n, "Rejected": filt_info["regions_rejected"],
+             **{f"Rejected: {k.replace('_', ' ')}": v for k, v in filt_info["rejection_reasons"].items() if v},
+             "High / medium / low": " / ".join(str(conf_info["counts"][b]) for b in ("high", "medium", "low")),
+             "Count range": f"{lo}–{hi}"},
+        ),
+    }
+    out = [{
+        "key": "imagery", "title": "Source imagery", "headline": f"{m:.2f} m/px",
+        "url": f"/api/jobs/{job_id}/imagery.png",
+        "caption": "The input, cropped to the area's bounding box and gridded so each pixel has one true ground size.",
+        "stats": {"Source": src, "Resolution": f"{m:.3f} m/px", "Image": f"{w} × {h} px", "CRS": scene.crs},
+    }]
+    for f in files:
+        title, headline, caption, stats = stages[f]
+        out.append({"key": f[len("stage_"):-len(".png")], "title": title, "headline": headline, "caption": caption,
+                    "url": f"/api/jobs/{job_id}/{f}", "stats": stats})
+    label = "DeepForest + canopy mask" if hybrid else "classical watershed"
+    return {"detector": detector_used, "detector_label": label, "stages": out}
 
 
 __all__ = ["run_pipeline", "STAGES", "PipelineError", "LIMITATIONS_MD"]

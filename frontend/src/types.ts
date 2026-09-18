@@ -2,8 +2,10 @@
 
 export type VegIndex = "exg" | "vari" | "ndvi";
 export type ConfidenceBucket = "high" | "medium" | "low";
+export type Detector = "hybrid" | "classical";
 
 export interface JobParams {
+  detector: Detector;
   min_crown_diameter_m: number;
   veg_index: VegIndex;
   threshold_mode: "otsu" | "manual";
@@ -99,6 +101,22 @@ export interface JobResult {
   canopy_png_url: string;
   overlay_png_url: string;
   audit_zip_url: string;
+  pipeline?: PipelineInfo;
+}
+
+export interface PipelineStage {
+  key: string;
+  title: string;
+  headline: string | null;
+  caption: string;
+  url: string;
+  stats: Record<string, string | number>;
+}
+
+export interface PipelineInfo {
+  detector: Detector;
+  detector_label: string;
+  stages: PipelineStage[];
 }
 
 export interface CrownProps {
@@ -113,7 +131,8 @@ export interface CrownProps {
   height_reason: string | null;
   confidence: number;
   confidence_bucket: ConfidenceBucket;
-  signals: { shape: number; size: number; separation: number; shadow: number };
+  signals: { shape: number; size: number; separation: number; shadow: number; detector?: number };
+  detector_score?: number | null;
   low_confidence_reason: string | null;
 }
 

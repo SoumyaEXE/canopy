@@ -34,6 +34,7 @@ CSV_FIELDS = [
     "signal_size",
     "signal_separation",
     "signal_shadow",
+    "detector_score",
 ]
 
 
@@ -58,6 +59,7 @@ def crown_feature(c: dict) -> dict:
         "confidence": c["confidence"],
         "confidence_bucket": c["confidence_bucket"],
         "signals": c["signals"],
+        "detector_score": c.get("detector_score"),
         "low_confidence_reason": c.get("low_confidence_reason"),
     }
     return {"type": "Feature", "id": c["id"], "geometry": c["polygon"], "properties": props}
@@ -102,6 +104,7 @@ def write_csv(path: Path, crowns: list[dict]) -> None:
                 "signal_size": c["signals"]["size"],
                 "signal_separation": c["signals"]["separation"],
                 "signal_shadow": c["signals"]["shadow"],
+                "detector_score": "" if c.get("detector_score") is None else c["detector_score"],
             }
         )
     path.write_text(buf.getvalue(), encoding="utf-8")
@@ -188,3 +191,131 @@ def write_bundle(job_dir: Path, manifest: dict, result: dict, limitations_md: st
                 info.compress_type = zipfile.ZIP_DEFLATED
                 zf.writestr(info, f.read_bytes())
     return zpath
+
+
+# ---- pipeline stage images ----------------------------------------------------------------------------
+# Every stage image has the imagery's exact pixel grid, so the frontend can stack it over imagery.png.
+
+_VIRIDIS = np.array(
+    [(68, 1, 84), (59, 82, 139), (33, 145, 140), (94, 201, 98), (253, 231, 37)], dtype=np.float64
+)
+REJECT_RGB = (148, 163, 184)
+BOX_RGB = (250, 204, 21)
+
+
+def _ramp(v: np.ndarray) -> np.ndarray:
+    """Map [0, 1] to a 5-stop viridis approximation, NumPy only."""
+    v = np.clip(np.nan_to_num(v, nan=0.0), 0.0, 1.0) * (len(_VIRIDIS) - 1)
+    i = np.minimum(v.astype(np.int64), len(_VIRIDIS) - 2)
+    f = (v - i)[..., None]
+    return (_VIRIDIS[i] * (1 - f) + _VIRIDIS[i + 1] * f).round().astype(np.uint8)
+
+
+def _stretch(a: np.ndarray, where: np.ndarray) -> np.ndarray:
+    vals = a[where] if where.any() else a.ravel()
+    lo, hi = np.percentile(vals, 1), np.percentile(vals, 99)
+    return (a - lo) / (hi - lo if hi > lo else 1.0)
+
+
+def _rgba(rgb: np.ndarray, alpha: np.ndarray | int = 255) -> np.ndarray:
+    out = np.zeros((*rgb.shape[:2], 4), dtype=np.uint8)
+    out[..., :3] = rgb
+    out[..., 3] = alpha
+    return out
+
+
+def _label_colours(n: int) -> np.ndarray:
+    """Distinct, deterministic colours per label (golden-angle hue walk)."""
+    k = np.arange(n + 1, dtype=np.float64)
+    hue = (k * 0.618033988749895) % 1.0
+    h6 = hue * 6
+    x = 1 - np.abs(h6 % 2 - 1)
+    c = np.zeros((n + 1, 3))
+    for lo, (r, g, b) in enumerate([(1, "x", 0), ("x", 1, 0), (0, 1, "x"), (0, "x", 1), ("x", 0, 1), (1, 0, "x")]):
+        sel = (h6 >= lo) & (h6 < lo + 1)
+        for ch, v in enumerate((r, g, b)):
+            c[sel, ch] = x[sel] if v == "x" else v
+    rgb = (0.35 + 0.6 * c) * 255
+    rgb[0] = 0
+    return rgb.round().astype(np.uint8)
+
+
+def _draw_rect(img: np.ndarray, x0: float, y0: float, x1: float, y1: float, colour, t: int) -> None:
+    h, w = img.shape[:2]
+    c0, r0 = max(0, int(x0)), max(0, int(y0))
+    c1, r1 = min(w - 1, int(x1)), min(h - 1, int(y1))
+    if c1 <= c0 or r1 <= r0:
+        return
+    img[r0 : r0 + t, c0 : c1 + 1] = colour
+    img[max(r0, r1 - t + 1) : r1 + 1, c0 : c1 + 1] = colour
+    img[r0 : r1 + 1, c0 : c0 + t] = colour
+    img[r0 : r1 + 1, max(c0, c1 - t + 1) : c1 + 1] = colour
+
+
+def write_stage_images(
+    job_dir: Path,
+    *,
+    index: np.ndarray,
+    raw: np.ndarray,
+    canopy: np.ndarray,
+    aoi: np.ndarray,
+    response: np.ndarray | None,
+    markers: np.ndarray | None,
+    boxes: np.ndarray | None,
+    labels: np.ndarray,
+    crowns: list[dict],
+    rejected: list[dict],
+) -> list[str]:
+    """Write stage_*.png and return the file names written, in pipeline order."""
+    h, w = canopy.shape
+    written: list[str] = []
+    dot = max(1, round(min(h, w) / 250))
+
+    def save(name: str, arr: np.ndarray) -> None:
+        Image.fromarray(arr, "RGBA").save(job_dir / name, optimize=True)
+        written.append(name)
+
+    alpha_aoi = np.where(aoi, 255, 60).astype(np.uint8)
+    save("stage_index.png", _rgba(_ramp(_stretch(index, aoi)), alpha_aoi))
+
+    thr = np.zeros((h, w, 4), dtype=np.uint8)
+    thr[raw] = (*EMERALD, 255)
+    thr[~raw & aoi] = (15, 23, 42, 170)
+    save("stage_threshold.png", thr)
+
+    msk = np.zeros((h, w, 4), dtype=np.uint8)
+    msk[canopy] = (*EMERALD, 255)
+    msk[raw & ~canopy] = (239, 68, 68, 255)  # removed by morphology
+    msk[~canopy & ~raw & aoi] = (15, 23, 42, 170)
+    save("stage_mask.png", msk)
+
+    if boxes is not None:
+        det = np.zeros((h, w, 4), dtype=np.uint8)
+        t = max(1, round(min(h, w) / 400))
+        for x0, y0, x1, y1, s in boxes:
+            a = int(110 + 145 * float(s))
+            _draw_rect(det, x0, y0, x1, y1, (*BOX_RGB, a), t)
+        save("stage_detections.png", det)
+    elif response is not None:
+        mk = _rgba(_ramp(_stretch(response, canopy)), np.where(canopy, 235, 0).astype(np.uint8))
+        for r, c in markers if markers is not None else []:
+            mk[max(0, r - dot) : r + dot + 1, max(0, c - dot) : c + dot + 1] = (255, 255, 255, 255)
+        save("stage_markers.png", mk)
+
+    lab = _rgba(_label_colours(int(labels.max()))[labels], np.where(labels > 0, 230, 0).astype(np.uint8))
+    lab[find_boundaries(labels, mode="inner")] = (15, 23, 42, 255)
+    save("stage_segments.png", lab)
+
+    fin = np.zeros((h, w, 4), dtype=np.uint8)
+    kept_codes = np.zeros(int(labels.max()) + 1, dtype=np.uint8)
+    for c in crowns:
+        kept_codes[c["label"]] = {"high": 1, "medium": 2, "low": 3}[c["confidence_bucket"]]
+    for r in rejected:
+        kept_codes[r["label"]] = 4
+    code = kept_codes[labels]
+    bounds = find_boundaries(labels, mode="inner")
+    for k, rgb in ((1, BUCKET_RGB["high"]), (2, BUCKET_RGB["medium"]), (3, BUCKET_RGB["low"]), (4, REJECT_RGB)):
+        fin[(code == k) & ~bounds] = (*rgb, 90)
+        fin[(code == k) & bounds] = (*rgb, 255)
+    save("stage_crowns.png", fin)
+    return written

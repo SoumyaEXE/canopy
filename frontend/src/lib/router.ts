@@ -7,7 +7,7 @@ import { useCallback, useEffect, useState } from "react";
  *   #/new/draw
  *   #/limitations
  */
-export type ProjectTab = "overview" | "map" | "crowns" | "validation" | "runs" | "audit";
+export type ProjectTab = "overview" | "map" | "crowns" | "pipeline" | "validation" | "runs" | "audit";
 
 export type Route =
   | { name: "projects" }
@@ -15,7 +15,7 @@ export type Route =
   | { name: "draw" }
   | { name: "limitations" };
 
-const TABS: ProjectTab[] = ["overview", "map", "crowns", "validation", "runs", "audit"];
+const TABS: ProjectTab[] = ["overview", "map", "crowns", "pipeline", "validation", "runs", "audit"];
 
 export function parseHash(hash: string): Route {
   const [path, query = ""] = hash.replace(/^#/, "").split("?");

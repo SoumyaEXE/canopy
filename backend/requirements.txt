@@ -1,15 +1,16 @@
-# Removed strict pins to allow Python 3.10 compatibility on Hugging Face Spaces
-numpy
-scipy
-scikit-image
+# Pinned to the versions the tests and determinism checks ran against (Python 3.12+).
+# numpy 2.5, scipy 1.18, rasterio 1.5 and pyproj 3.8 do not ship wheels for older Pythons.
+numpy==2.5.3
+scipy==1.18.1
+scikit-image==0.26.0
 # rasterio wheels bundle GDAL, so no system GDAL packages are needed.
-rasterio
-shapely
-pyproj
-fastapi
-uvicorn
-python-multipart
-pydantic
-lxml
-requests
-pillow
+rasterio==1.5.1
+shapely==2.1.2
+pyproj==3.8.0
+fastapi==0.141.1
+uvicorn==0.53.0
+python-multipart==0.0.32
+pydantic==2.13.5
+lxml==6.1.3
+requests==2.34.2
+pillow==12.3.0

@@ -9,3 +9,5 @@ dist/
 .env.local
 *.log
 .DS_Store
+deploy.tar.gz
+*.tar.gz
