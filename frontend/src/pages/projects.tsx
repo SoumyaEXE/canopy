@@ -1,7 +1,9 @@
 import { useMemo, useState } from "react";
 import {
   RiAddLine,
+  RiCheckLine,
   RiDeleteBin6Line,
+  RiFileCopyLine,
   RiEditLine,
   RiFolderOpenLine,
   RiMore2Fill,
@@ -145,6 +147,41 @@ function CardSkeleton() {
   );
 }
 
+/** Case-sensitive, but forgiving of copy-paste whitespace and Unicode forms (e.g. "km²"). */
+const sameName = (a: string, b: string) => {
+  const norm = (s: string) => s.normalize("NFC").replace(/\s+/g, " ").trim();
+  return norm(a) === norm(b) && norm(b) !== "";
+};
+
+function CopyButton({ text }: { text: string }) {
+  const [copied, setCopied] = useState(false);
+  const copy = async () => {
+    try {
+      await navigator.clipboard.writeText(text);
+    } catch {
+      const t = document.createElement("textarea");
+      t.value = text;
+      document.body.appendChild(t);
+      t.select();
+      document.execCommand("copy");
+      t.remove();
+    }
+    setCopied(true);
+    setTimeout(() => setCopied(false), 1500);
+  };
+  return (
+    <button
+      type="button"
+      onClick={() => void copy()}
+      aria-label={copied ? "Copied" : "Copy name"}
+      className="flex shrink-0 cursor-pointer items-center gap-1 rounded-md px-2 py-1 text-caption-1-medium text-text-secondary ring-1 ring-separator-border ring-inset transition-colors hover:bg-background-primary-default hover:text-text-primary"
+    >
+      {copied ? <RiCheckLine className="size-3.5 text-status-lime-text" aria-hidden /> : <RiFileCopyLine className="size-3.5" aria-hidden />}
+      {copied ? "Copied" : "Copy"}
+    </button>
+  );
+}
+
 export function ProjectsPage({
   projects,
   onOpen,
@@ -164,6 +201,7 @@ export function ProjectsPage({
   const [newName, setNewName] = useState("");
   const [deleting, setDeleting] = useState<Project | null>(null);
   const [confirmText, setConfirmText] = useState("");
+  const nameMatches = !!deleting && sameName(confirmText, deleting.name);
   const [busy, setBusy] = useState(false);
 
   const shown = useMemo(() => {
@@ -287,13 +325,17 @@ export function ProjectsPage({
               audit bundles, will be permanently deleted. This cannot be undone.
             </p>
           </div>
-          <Input
-            label={<span>Type <span className="font-mono text-text-primary">{deleting?.name}</span> to confirm</span>}
-            value={confirmText}
-            onChange={setConfirmText}
-            placeholder={deleting?.name}
-            autoFocus
-          />
+          <div className="flex flex-col gap-2">
+            <p className="text-body-2-regular text-text-secondary">Type the workspace name to confirm</p>
+            <div className="flex items-center gap-2 rounded-lg bg-background-secondary-default py-1.5 pr-1.5 pl-3 ring-1 ring-separator-border ring-inset">
+              <span className="min-w-0 flex-1 truncate font-mono text-body-2-regular text-text-primary" title={deleting?.name}>{deleting?.name}</span>
+              <CopyButton text={deleting?.name ?? ""} />
+            </div>
+            <Input aria-label="Workspace name to confirm" value={confirmText} onChange={setConfirmText} autoFocus />
+            <p className={cx("flex items-center gap-1 text-caption-1-regular", nameMatches ? "text-status-lime-text" : "text-text-tertiary")}>
+              {nameMatches ? <><RiCheckLine className="size-3.5" aria-hidden /> Name matches</> : "The delete button unlocks when the name matches exactly."}
+            </p>
+          </div>
           {deleting?.latest_run && (deleting.latest_run.status === "running" || deleting.latest_run.status === "queued") && (
             <Chip variant="caption" color="yellow">A run is in progress; wait for it to finish first.</Chip>
           )}
@@ -302,7 +344,7 @@ export function ProjectsPage({
             <Button
               variant="danger"
               size="small"
-              disabled={busy || !deleting || confirmText.trim() !== deleting.name.trim()}
+              disabled={busy || !nameMatches}
               onClick={async () => {
                 if (!deleting) return;
                 setBusy(true);

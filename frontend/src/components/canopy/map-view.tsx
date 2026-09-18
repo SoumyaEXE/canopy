@@ -62,11 +62,17 @@ function fc(features: GeoJSON.Feature[]): GeoJSON.FeatureCollection {
   return { type: "FeatureCollection", features };
 }
 
+function validLngLat(c: unknown): c is [number, number] {
+  return Array.isArray(c) && c.length >= 2 && Number.isFinite(c[0]) && Number.isFinite(c[1]);
+}
+
 function parseProps(raw: Record<string, unknown>): CrownProps {
   // MapLibre stringifies nested properties on rendered features; parse them back.
   const p = { ...raw } as Record<string, unknown>;
   for (const key of ["signals", "centroid_lonlat"]) {
-    if (typeof p[key] === "string") p[key] = JSON.parse(p[key] as string);
+    if (typeof p[key] === "string") {
+      try { p[key] = JSON.parse(p[key] as string); } catch { /* keep original */ }
+    }
   }
   return p as unknown as CrownProps;
 }
@@ -94,7 +100,7 @@ export function MapView(props: MapViewProps) {
 
   const openPopupRef = useRef((crown: CrownProps) => {
     const map = mapRef.current;
-    if (!map) return;
+    if (!map || !validLngLat(crown.centroid_lonlat)) return;
     popupRef.current?.remove();
     popupRef.current = new maplibregl.Popup({ closeButton: false, maxWidth: "280px", offset: 8 })
       .setLngLat(crown.centroid_lonlat)
@@ -113,6 +119,7 @@ export function MapView(props: MapViewProps) {
       map.fitBounds(focus.bounds, { padding: 40, maxZoom: 17, duration: 700 });
       return;
     }
+    if (!validLngLat(focus.lngLat)) return;
     map.flyTo({ center: focus.lngLat, zoom: Math.max(map.getZoom(), 18.5), duration: 700 });
     if (focus.crownId == null) return;
     const feature = crowns?.features.find((f) => (f.properties as CrownProps).id === focus.crownId);
@@ -261,16 +268,19 @@ export function MapView(props: MapViewProps) {
     if (!result) return;
 
     const corners = result.image_corners as [LngLat, LngLat, LngLat, LngLat];
-    map.addSource("imagery", { type: "image", url: url(result.imagery_png_url), coordinates: corners });
-    map.addLayer(
-      { id: "imagery", type: "raster", source: "imagery", paint: { "raster-opacity": imageryOpacity / 100, "raster-fade-duration": 0 } },
-      OVERLAY_FIRST,
-    );
-    map.addSource("canopy", { type: "image", url: url(result.canopy_png_url), coordinates: corners });
-    map.addLayer(
-      { id: "canopy", type: "raster", source: "canopy", paint: { "raster-opacity": 0.25, "raster-fade-duration": 0 } },
-      OVERLAY_FIRST,
-    );
+    const cornersValid = corners.every(validLngLat);
+    if (cornersValid) {
+      map.addSource("imagery", { type: "image", url: url(result.imagery_png_url), coordinates: corners });
+      map.addLayer(
+        { id: "imagery", type: "raster", source: "imagery", paint: { "raster-opacity": imageryOpacity / 100, "raster-fade-duration": 0 } },
+        OVERLAY_FIRST,
+      );
+      map.addSource("canopy", { type: "image", url: url(result.canopy_png_url), coordinates: corners });
+      map.addLayer(
+        { id: "canopy", type: "raster", source: "canopy", paint: { "raster-opacity": 0.25, "raster-fade-duration": 0 } },
+        OVERLAY_FIRST,
+      );
+    }
 
     map.addSource("rejected", { type: "geojson", data: rejected ?? EMPTY });
     map.addLayer(
@@ -295,11 +305,13 @@ export function MapView(props: MapViewProps) {
     );
 
     const centroids = fc(
-      (crowns?.features ?? []).map((f) => ({
-        type: "Feature",
-        properties: f.properties,
-        geometry: { type: "Point", coordinates: (f.properties as CrownProps).centroid_lonlat },
-      })),
+      (crowns?.features ?? [])
+        .filter((f) => validLngLat((f.properties as CrownProps).centroid_lonlat))
+        .map((f) => ({
+          type: "Feature",
+          properties: f.properties,
+          geometry: { type: "Point", coordinates: (f.properties as CrownProps).centroid_lonlat },
+        })),
     );
     map.addSource("centroids", { type: "geojson", data: centroids });
     map.addLayer(
@@ -337,8 +349,10 @@ export function MapView(props: MapViewProps) {
     const map = mapRef.current;
     if (!map || !ready || !result) return;
     const ring = result.aoi.coordinates[0];
-    const lons = ring.map((c) => c[0]);
-    const lats = ring.map((c) => c[1]);
+    if (!ring || !ring.length) return;
+    const lons = ring.map((c) => c[0]).filter(Number.isFinite);
+    const lats = ring.map((c) => c[1]).filter(Number.isFinite);
+    if (!lons.length || !lats.length) return;
     const bounds: LngLatBoundsLike = [
       [Math.min(...lons), Math.min(...lats)],
       [Math.max(...lons), Math.max(...lats)],

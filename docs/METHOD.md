@@ -2,7 +2,7 @@
 
 Every number CANOPY reports comes from the steps below. Each parameter named here is written into `manifest.json` in the audit bundle, and the ones a user can change are in the control rail.
 
-Canopy area and cover come from classical computer vision only. Crown detection has two paths (section 6): a pretrained tree detector (DeepForest) on fine imagery, and classical blob markers elsewhere. Both are deterministic: given the same input and parameters, the pipeline produces byte-identical `crowns.geojson`. This is checked by `backend/scripts/build_sample.py`, `tests/test_determinism.py`, and the API end-to-end script.
+Canopy area and cover come from classical computer vision only. Crown detection has two paths (section 6): a YOLO11 segmentation model fine-tuned on tree crowns, and classical blob markers as the fallback. Both are deterministic: given the same input and parameters, the pipeline produces byte-identical `crowns.geojson`. This is checked by `backend/scripts/build_sample.py`, `tests/test_determinism.py`, and the API end-to-end script.
 
 ## Optional local calibration model
 
@@ -92,21 +92,31 @@ Outputs:
 
 ## 6. Crown detection and segmentation
 
-The `detector` parameter is `hybrid` (shown as **Auto**, the default) or `classical`. Auto picks by resolution, because each method was measured to win in a different range (see *Measured accuracy* below):
+The `detector` parameter is `hybrid` (shown as **Auto**, the default) or `classical`. Auto runs a YOLO11 instance-segmentation model fine-tuned on tree crowns; `yolo_variant` picks its size:
 
-| Pixel size | Auto uses | Why |
-|---|---|---|
-| ≤ 0.20 m | DeepForest + canopy mask | F1 0.76 at 0.1 m, against 0.56 for blobs |
-| > 0.20 m (all satellite basemaps) | Classical blob markers | DeepForest falls to F1 0.37 at 0.25 m and under 0.1 at 0.5 m; blobs hold 0.68 at 0.5 m |
+| `yolo_variant` | UI label | Parameters | Use it for |
+|---|---|---|---|
+| `yolo11n-seg` | Fast | ~3 M | quick looks, very large areas |
+| `yolo11s-seg` | Balanced (default) | ~10 M | normal use on a CPU |
+| `yolo11m-seg` | High accuracy | ~22 M | when the count matters; about 3x slower than s |
 
-If torch or deepforest is not installed, Auto uses classical and adds a warning.
+Weights live in `backend/data/models/<variant>-trees.pt`. Only trained sizes are offered (`GET /api/models`); a missing size falls back to the nearest trained one, and no trained weights, a missing torch/ultralytics install, imagery coarser than 3 m, or a model that finds no trees in imagery that is more than 5% canopy all fall back to the classical path, with a warning.
 
-**DeepForest path** (`pipeline/detector.py`):
+**Training** (`scripts/build_tree_dataset.py`, `scripts/train_trees.py`, `scripts/train_all.bat`):
 
-1. `weecology/deepforest-tree` (RetinaNet trained on 0.1 m airborne RGB) predicts tree boxes. Images larger than 400 px run as 400 px patches with 25% overlap, and duplicates are merged by NMS at IoU 0.15. Boxes scoring below 0.3 are dropped.
-2. Each box's inscribed ellipse claims pixels. Where ellipses overlap, a pixel goes to the box with the smaller normalised elliptical distance.
-3. Each ellipse is trimmed to the canopy mask grown by 0.5 m (crown edges are darker than centres). If the mask covers under 35% of the ellipse, the mask missed that tree and the ellipse itself is the outline.
-4. The size filter uses a 1 m minimum diameter, because the detector already vouches for each tree.
+1. 233 m windows are sampled inside each of the 25 Odisha KML polygons and fetched at zoom 18 (0.56 m/px; Esri serves only grey "Map data not yet available" placeholders at zoom 19 there). The two sample screenshots are added at an assumed 0.3 m. Every sixth polygon is held out whole for validation.
+2. The classical path below labels every kept crown on the sharp imagery.
+3. Each 416 px chip is written sharp, and degraded 2x and 3x (box-averaged down, optionally blurred, JPEG quality 55 to 90, bicubic back up to 416 px) with the sharp labels. This teaches the model low-resolution imagery with high-resolution answers while keeping crowns above the network's 8 px stride.
+4. COCO-pretrained YOLO11-seg is fine-tuned on CPU at 416 px, single class, flips both ways, 90 degree rotations, scale 0.3 and HSV jitter, cosine learning rate, early stopping after 15 flat epochs, and a wall-clock budget per size (1, 2 and 3.5 hours for n, s, m on an i3-1215U).
+
+**Inference** (`pipeline/detector.py`):
+
+1. The scene is resampled to the training grid: pixels finer than 0.45 m are averaged down, pixels coarser than 0.65 m are scaled up (at most 3.5x, within a 36 M pixel budget).
+2. 416 px patches with 25% overlap run through the model (confidence 0.25, NMS IoU 0.5 inside a patch). Detections cut by an interior patch edge are left to the neighbouring patch, and the rest are merged by NMS at IoU 0.3.
+3. Each detection's own mask is kept as a crop (never a full-scene array, so memory stays flat on large areas); pixels claimed by two masks go to the crown whose box centre is nearer.
+4. Each crown is trimmed to the canopy mask grown by 0.5 m; if the mask covers under 35% of it, the model's outline is kept as is. The size filter uses a 1 m minimum diameter.
+
+Earlier versions used DeepForest (RetinaNet trained on 0.1 m airborne imagery). It scored F1 0.76 on the 0.1 m benchmark tile but under 0.1 at 0.5 m, and the challenge imagery is 0.56 to 1.1 m, which is why it was replaced (see `docs/CANOPY_Product_Brief.pdf` for the full comparison).
 
 **Classical path** (`crowns.segment_blobs`):
 

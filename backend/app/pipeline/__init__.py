@@ -107,6 +107,17 @@ def run_pipeline(
         n_tiles = tiles.tile_count(parsed.aoi_lonlat, zoom)
         progress("acquiring_imagery", f"Fetching {n_tiles} {config.TILE_SOURCE_NAME} tiles at zoom {zoom}")
         scene = tiles.fetch_scene(parsed.aoi_lonlat, zoom)
+        # Esri answers zooms it has no imagery for with grey "Map data not yet available" tiles, not errors.
+        while tiles.placeholder_fraction(scene.rgb) > 0.10 and zoom > config.MIN_AUTO_ZOOM:
+            zoom -= 1
+            warnings.append(
+                f"The imagery provider has no zoom {zoom + 1} imagery for this area (it returned 'Map data not yet "
+                f"available' tiles), so zoom {zoom} was used instead."
+            )
+            progress("acquiring_imagery", f"No imagery at zoom {zoom + 1}; fetching zoom {zoom}")
+            scene = tiles.fetch_scene(parsed.aoi_lonlat, zoom)
+        if tiles.placeholder_fraction(scene.rgb) > 0.10:
+            raise PipelineError("imagery_unavailable", "The imagery provider has no imagery for this area at any usable zoom.")
         if zoom >= 19:
             warnings.append("Zoom 19 imagery is interpolated in many regions and may not add real detail over zoom 18.")
         spread = scene.audit["resolution_spread"]
@@ -124,7 +135,7 @@ def run_pipeline(
         )
         if scene.audit.get("resolution_assumed"):
             warnings.append(
-                f"No ground resolution was entered, so {m:g} m per pixel was assumed (typical aerial imagery). "
+                f"No ground resolution was entered, so {m:g} m per pixel was assumed (typical of a close-zoom satellite screenshot). "
                 "If that is wrong, every area and size is wrong by the square of the error. Set it in the parameters."
             )
     if scene.audit.get("decimation_factor", 1) > 1:
@@ -149,7 +160,16 @@ def run_pipeline(
         threshold, mode = float(params["threshold_manual"]), "manual"
     else:
         threshold, mode = otsu["otsu_value"], "otsu"
-    if otsu["confidence"] == "low":
+        dense = vegetation.dense_canopy_threshold(index[aoi], otsu) if veg == "exg" else None
+        if dense is not None:
+            warnings.append(
+                f"Dense canopy: this scene is mostly forest, so Otsu ({otsu['otsu_value']:.3f}) was splitting sunlit from "
+                f"shaded crowns. A three-class split was used instead (threshold {dense:.3f}), and crowns are traced as "
+                f"sunlit crown tops separated by shadow gaps (smallest crown {crowns.DENSE_MIN_CROWN_M:g} m)."
+            )
+            threshold = dense
+            otsu = {**otsu, "dense_canopy_threshold": round(dense, 6)}
+    if otsu["confidence"] == "low" and "dense_canopy_threshold" not in otsu:
         warnings.append("Low threshold confidence: scene may be uniform (mostly canopy or mostly bare), so the Otsu split is weak.")
     idx_vals = index[aoi]
     index_range = [round(float(np.percentile(idx_vals, 1)), 4), round(float(np.percentile(idx_vals, 99)), 4)]
@@ -170,23 +190,43 @@ def run_pipeline(
     if wanted == "hybrid":
         ok, why = detector.available()
         if not ok:
-            warnings.append(f"The AI tree detector is not installed on this server ({why}), so classical blob detection was used.")
+            warnings.append(f"No trained AI tree model is installed on this server yet ({why}), so classical blob detection was used.")
         elif m > detector.MAX_GSD_M:
             warnings.append(
-                f"This imagery is {m:.2f} m per pixel. The AI tree detector was trained on 0.1 m imagery and is unreliable "
-                f"above {detector.MAX_GSD_M} m, so classical blob detection was used instead (see the Pipeline tab)."
+                f"This imagery is {m:.2f} m per pixel. Crowns are only a pixel or two across at that resolution, which is "
+                f"beyond what the AI tree detector was trained on (up to {detector.MAX_GSD_M} m), so classical blob "
+                "detection was used instead (see the Pipeline tab)."
             )
         else:
-            progress("segmenting_crowns", "Detecting trees with YOLO11 segmentation")
-            boxes, det_info = detector.detect(scene.rgb, m)
-            progress("segmenting_crowns", "Shaping crown outlines from the canopy mask")
-            labels, distance, hyb_info = detector.crowns_from_boxes(boxes, canopy, aoi, m)
-            det_scores = hyb_info.pop("scores")
-            seg_info = {"detector": "hybrid", **det_info, **hyb_info, **detector.model_version()}
-            detector_used = "hybrid"
-    if detector_used == "classical":
+            wanted_variant = params.get("yolo_variant") or detector.DEFAULT_VARIANT
+            variant = detector.resolve_variant(wanted_variant)
+            if variant != wanted_variant:
+                warnings.append(
+                    f"The {detector.VARIANTS.get(wanted_variant, wanted_variant)} model ({wanted_variant}) is not trained on "
+                    f"this server, so {detector.VARIANTS[variant]} ({variant}) was used."
+                )
+            progress("segmenting_crowns", f"Detecting trees with {variant} ({detector.VARIANTS[variant]})")
+            boxes, masks, det_info = detector.detect(scene.rgb, m, model_variant=variant)
+            if len(boxes) == 0 and cover_pct > 5.0:
+                # A model that sees canopy but no trees is out of its depth; do not report zero trees.
+                warnings.append(
+                    f"The AI detector ({variant}) found no trees in imagery that is {cover_pct:.0f}% canopy, so classical "
+                    "blob detection was used instead."
+                )
+                boxes = None
+            else:
+                progress("segmenting_crowns", "Shaping crown outlines from the canopy mask")
+                labels, distance, hyb_info = detector.crowns_from_boxes(boxes, canopy, aoi, m, masks=masks)
+                det_scores = hyb_info.pop("scores")
+                seg_info = {"detector": "hybrid", **det_info, **hyb_info, **detector.model_version()}
+                detector_used = "hybrid"
+    if detector_used == "classical" and "dense_canopy_threshold" in otsu:
+        progress("segmenting_crowns", "Dense canopy: finding sunlit crown tops between shadow gaps")
+        labels, distance, seg_info = crowns.segment_dense(scene.rgb, canopy, aoi, m, min_d)
+    elif detector_used == "classical":
         progress("segmenting_crowns", "Finding crown centres and running watershed")
         labels, distance, seg_info = crowns.segment_blobs(index, scene.rgb, threshold, canopy, m, min_d)
+    if detector_used == "classical":
         marker_coords = seg_info.pop("_marker_coords")
         marker_response = seg_info.pop("_response")
         seg_info = {"detector": "classical", **seg_info}

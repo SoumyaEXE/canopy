@@ -8,6 +8,7 @@ import type { JobParams, JobStatus, Run } from "@/types";
 
 const PARAM_LABEL: Record<keyof JobParams, string> = {
   detector: "Detector",
+  yolo_variant: "Model",
   min_crown_diameter_m: "Min crown",
   veg_index: "Index",
   threshold_mode: "Threshold",
@@ -23,6 +24,7 @@ function formatParam(key: keyof JobParams, p: JobParams): string {
   if (key === "min_crown_diameter_m") return `${Number(v).toFixed(1)} m`;
   if (key === "veg_index") return String(v).toUpperCase();
   if (key === "detector") return v === "classical" ? "classical" : "auto";
+  if (key === "yolo_variant") return p.detector === "classical" ? "—" : ({ "yolo11n-seg": "fast (n)", "yolo11s-seg": "balanced (s)", "yolo11m-seg": "high accuracy (m)" }[String(v)] ?? "balanced (s)");
   if (key === "threshold_mode") return p.threshold_mode === "manual" ? `manual ${p.threshold_manual}` : "Otsu";
   if (key === "enable_height") return v ? "on" : "off";
   if (key === "image_m_per_px") return v == null ? "—" : `${v} m/px`;
@@ -32,7 +34,7 @@ function formatParam(key: keyof JobParams, p: JobParams): string {
 
 /** What changed from the previous run, so a history row explains itself. */
 function paramChanges(run: Run, prev: Run | undefined): string[] {
-  const keys: (keyof JobParams)[] = ["detector", "min_crown_diameter_m", "veg_index", "threshold_mode", "tile_zoom", "enable_height", "acquisition_datetime_utc"];
+  const keys: (keyof JobParams)[] = ["detector", "yolo_variant", "min_crown_diameter_m", "veg_index", "threshold_mode", "tile_zoom", "enable_height", "acquisition_datetime_utc"];
   if (!prev) return keys.map((k) => `${PARAM_LABEL[k]} ${formatParam(k, run.params)}`).slice(0, 3);
   return keys.filter((k) => formatParam(k, run.params) !== formatParam(k, prev.params)).map((k) => `${PARAM_LABEL[k]} ${formatParam(k, prev.params)} → ${formatParam(k, run.params)}`);
 }

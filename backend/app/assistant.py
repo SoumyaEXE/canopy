@@ -427,8 +427,10 @@ def suggestions(project_id: str) -> list[str]:
     out = ["Summarise this workspace in three lines"]
     if kind in ("kml", "kmz", "geojson", "drawn"):
         out.append("What does my boundary cover, and how was imagery fetched for it?")
+    elif kind == "image":
+        out.append("Is the resolution I entered right for this image, and what does it change?")
     else:
-        out.append("Is this GeoTIFF fine enough for the AI tree detector?")
+        out.append("Is this GeoTIFF fine enough for crown detection?")
     if s.get("confidence_breakdown", {}).get("low"):
         out.append("Why are some crowns low confidence?")
     else:

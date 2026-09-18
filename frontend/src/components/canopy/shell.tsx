@@ -48,9 +48,9 @@ export function Shell<K extends string>({
           collapsed={collapsed}
           onToggleCollapsed={() => setManual(!collapsed)}
           footer={
-            <div className="rounded-xl bg-background-secondary-default p-3">
-              <p className="text-caption-1-medium text-text-primary">Classical CV, no carbon</p>
-              <p className="mt-0.5 text-caption-1-regular text-text-tertiary">Every number ships with its provenance.</p>
+            <div className="min-w-50 overflow-hidden rounded-xl bg-background-secondary-default p-3">
+              <p className="truncate text-caption-1-medium text-text-primary">YOLO11 + classical CV</p>
+              <p className="mt-0.5 text-caption-1-regular text-text-tertiary">Every number ships with its provenance. No carbon claims.</p>
             </div>
           }
         />

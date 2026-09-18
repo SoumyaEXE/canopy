@@ -178,7 +178,12 @@ export function OverviewPage({ result, crowns, run, runs, loading, onOpenMap, on
 
         <KpiCard color="#f59e0b">
           <DotLabel color="#f59e0b">Plausible range</DotLabel>
-          <Figure value={`${s.crown_count_range[0]}–${s.crown_count_range[1]}`} unit="estimated crowns" size="lg" unitBelow />
+          <Figure
+            value={`${s.crown_count_range[0]}–${s.crown_count_range[1]}`}
+            unit="estimated crowns"
+            size={String(s.crown_count_range[1]).length > 3 ? "md" : "lg"}
+            unitBelow
+          />
           <p className="mt-auto text-caption-1-regular text-text-tertiary">Expected count after accounting for missed or merged regions.</p>
         </KpiCard>
 

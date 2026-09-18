@@ -63,7 +63,7 @@ export function NewProjectModal({
   const [file, setFile] = useState<File | null>(null);
   const [info, setInfo] = useState<UploadInspection | null>(null);
   const [selected, setSelected] = useState<Set<number>>(new Set());
-  const [resolution, setResolution] = useState(0.1);
+  const [resolution, setResolution] = useState(0.3);
   const [inspecting, setInspecting] = useState(false);
 
   const reset = () => {

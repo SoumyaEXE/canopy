@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useRef, useState, type PointerEvent as ReactPointerEvent, type ReactNode } from "react";
 import { AnimatePresence, motion } from "motion/react";
 import {
   RiAddLine,
@@ -15,6 +15,7 @@ import {
 } from "@remixicon/react";
 import { api, CanopyApiError } from "@/api/client";
 import { Button } from "@/components/base/buttons/button";
+import { useMedia } from "@/components/canopy/shell";
 import type { AssistantInfo, ChatTurn, JobParams } from "@/types";
 import { cx } from "@/utils/cx";
 
@@ -116,6 +117,110 @@ function Markdown({ text }: { text: string }) {
 /* ------------------------------------------------------------------ pieces */
 
 /** The glowing orb on the empty state: two blurred gradients breathing out of phase. */
+const SIZE_KEY = "canopy.ai.size";
+const MIN_W = 360;
+const MAX_W = 960;
+const MIN_H = 420;
+const NARROW = 420;
+const WIDE = 720;
+const GAP = 8;
+
+type PanelSize = { w: number; h: number | null }; // h null = full height
+
+function loadSize(): PanelSize {
+  try {
+    const v = JSON.parse(localStorage.getItem(SIZE_KEY) ?? "null");
+    if (v && typeof v.w === "number") return { w: v.w, h: typeof v.h === "number" ? v.h : null };
+  } catch {
+    /* blocked storage: defaults */
+  }
+  return { w: NARROW, h: null };
+}
+
+const clamp = (v: number, lo: number, hi: number) => Math.min(Math.max(v, lo), Math.max(lo, hi));
+
+/** Drag-to-resize for the floating panel: width from the left edge, height from the bottom edge. */
+function usePanelSize() {
+  const [size, setSize] = useState<PanelSize>(loadSize);
+  const [dragging, setDragging] = useState<"w" | "h" | null>(null);
+  useEffect(() => {
+    try {
+      localStorage.setItem(SIZE_KEY, JSON.stringify(size));
+    } catch {
+      /* ignore */
+    }
+  }, [size]);
+  const start = useCallback(
+    (axis: "w" | "h") => (e: ReactPointerEvent<HTMLDivElement>) => {
+      e.preventDefault();
+      const el = e.currentTarget;
+      el.setPointerCapture(e.pointerId);
+      setDragging(axis);
+      const move = (ev: PointerEvent) =>
+        setSize((s) =>
+          axis === "w"
+            ? { ...s, w: clamp(window.innerWidth - ev.clientX - GAP, MIN_W, Math.min(MAX_W, window.innerWidth - 96)) }
+            : { ...s, h: clamp(ev.clientY - GAP, MIN_H, window.innerHeight - 2 * GAP) },
+        );
+      const up = () => {
+        setDragging(null);
+        el.removeEventListener("pointermove", move);
+        el.removeEventListener("pointerup", up);
+        el.removeEventListener("pointercancel", up);
+      };
+      el.addEventListener("pointermove", move);
+      el.addEventListener("pointerup", up);
+      el.addEventListener("pointercancel", up);
+    },
+    [],
+  );
+  return { size, setSize, dragging, start };
+}
+
+const BOX_KEY = "canopy.ai.composer";
+const BOX_MIN = 40;
+const BOX_DEFAULT = 56;
+const BOX_MAX = 360;
+
+/** Height of the message box, dragged from the grip above it and remembered. */
+function useComposerHeight() {
+  const [h, setH] = useState<number>(() => {
+    try {
+      const v = Number(localStorage.getItem(BOX_KEY));
+      return v >= BOX_MIN && v <= BOX_MAX ? v : BOX_DEFAULT;
+    } catch {
+      return BOX_DEFAULT;
+    }
+  });
+  const [dragging, setDragging] = useState(false);
+  useEffect(() => {
+    try {
+      localStorage.setItem(BOX_KEY, String(h));
+    } catch {
+      /* ignore */
+    }
+  }, [h]);
+  const start = (e: ReactPointerEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    const el = e.currentTarget;
+    el.setPointerCapture(e.pointerId);
+    const y0 = e.clientY;
+    const h0 = h;
+    setDragging(true);
+    const move = (ev: PointerEvent) => setH(clamp(h0 + (y0 - ev.clientY), BOX_MIN, Math.min(BOX_MAX, window.innerHeight * 0.45)));
+    const up = () => {
+      setDragging(false);
+      el.removeEventListener("pointermove", move);
+      el.removeEventListener("pointerup", up);
+      el.removeEventListener("pointercancel", up);
+    };
+    el.addEventListener("pointermove", move);
+    el.addEventListener("pointerup", up);
+    el.addEventListener("pointercancel", up);
+  };
+  return { h, setH, dragging, start };
+}
+
 function Orb() {
   return (
     <div className="relative size-28" aria-hidden>
@@ -189,7 +294,10 @@ export function AiPanel({
   const [messages, setMessages] = useState<Message[]>(() => loadHistory(projectId));
   const [draft, setDraft] = useState("");
   const [busy, setBusy] = useState(false);
-  const [wide, setWide] = useState(false);
+  const { size, setSize, dragging, start } = usePanelSize();
+  const box = useComposerHeight();
+  const desktop = useMedia("(min-width: 768px)");
+  const wide = size.w >= (NARROW + WIDE) / 2;
   const abort = useRef<AbortController | null>(null);
   const scroller = useRef<HTMLDivElement>(null);
   const input = useRef<HTMLTextAreaElement>(null);
@@ -288,16 +396,47 @@ export function AiPanel({
             role="dialog"
             aria-label="Canopy AI"
             className={cx(
-              "fixed inset-y-2 right-2 z-50 flex flex-col overflow-hidden rounded-2xl border border-separator-border bg-background-primary-default shadow-2xl",
-              "w-[calc(100vw-16px)]",
-              wide ? "md:w-[720px]" : "md:w-[420px]",
+              "fixed top-2 right-2 z-50 flex flex-col overflow-hidden rounded-2xl border border-separator-border bg-background-primary-default",
+              "shadow-[0_24px_64px_-12px_rgba(0,0,0,0.35),0_8px_24px_-8px_rgba(0,0,0,0.2)]",
+              dragging && "select-none",
             )}
-            style={{ transition: "width 260ms cubic-bezier(0.22, 1, 0.36, 1)" }}
-            initial={{ x: 48, opacity: 0, scale: 0.98 }}
-            animate={{ x: 0, opacity: 1, scale: 1 }}
-            exit={{ x: 48, opacity: 0, scale: 0.98 }}
-            transition={{ type: "spring", stiffness: 380, damping: 34, mass: 0.8 }}
+            style={{
+              width: desktop ? size.w : `calc(100vw - ${2 * GAP}px)`,
+              height: desktop && size.h ? size.h : `calc(100dvh - ${2 * GAP}px)`,
+              transformOrigin: "top right",
+              transition: dragging ? "none" : "width 280ms cubic-bezier(0.22, 1, 0.36, 1), height 280ms cubic-bezier(0.22, 1, 0.36, 1)",
+            }}
+            initial={{ opacity: 0, x: 28, scale: 0.96, filter: "blur(6px)" }}
+            animate={{ opacity: 1, x: 0, scale: 1, filter: "blur(0px)", transition: { type: "spring", stiffness: 420, damping: 36, mass: 0.7 } }}
+            exit={{ opacity: 0, x: 20, scale: 0.97, filter: "blur(4px)", transition: { duration: 0.16, ease: [0.4, 0, 1, 1] } }}
           >
+            {desktop && (
+              <>
+                {/* left edge: drag to change width */}
+                <div
+                  onPointerDown={start("w")}
+                  onDoubleClick={() => setSize((s) => ({ ...s, w: NARROW }))}
+                  title="Drag to resize · double-click to reset"
+                  className="group absolute inset-y-0 left-0 z-10 w-2 cursor-ew-resize"
+                >
+                  <span
+                    className={cx(
+                      "absolute top-1/2 left-0.5 h-10 w-1 -translate-y-1/2 rounded-full transition-colors",
+                      dragging === "w" ? "bg-brand" : "bg-transparent group-hover:bg-text-tertiary/50",
+                    )}
+                  />
+                </div>
+                {/* bottom edge: drag to change height */}
+                <div
+                  onPointerDown={start("h")}
+                  onDoubleClick={() => setSize((s) => ({ ...s, h: null }))}
+                  title="Drag to resize · double-click for full height"
+                  className="group absolute inset-x-0 bottom-0 z-10 flex h-3 cursor-ns-resize items-end justify-center pb-1"
+                >
+                  <span className={cx("h-1 w-10 rounded-full transition-colors", dragging === "h" ? "bg-brand" : "bg-separator-border group-hover:bg-text-tertiary")} />
+                </div>
+              </>
+            )}
             {/* header */}
             <div className="flex h-14 shrink-0 items-center gap-2 border-b border-separator-border px-4">
               <span className="flex size-6 items-center justify-center rounded-md bg-brand/15">
@@ -310,7 +449,7 @@ export function AiPanel({
               <button type="button" onClick={reset} aria-label="New conversation" className="flex size-8 cursor-pointer items-center justify-center rounded-lg text-text-tertiary hover:bg-background-secondary-default hover:text-text-primary">
                 <RiAddLine className="size-[18px]" />
               </button>
-              <button type="button" onClick={() => setWide((w) => !w)} aria-label={wide ? "Narrow panel" : "Widen panel"} className="hidden size-8 cursor-pointer items-center justify-center rounded-lg text-text-tertiary hover:bg-background-secondary-default hover:text-text-primary md:flex">
+              <button type="button" onClick={() => setSize((s) => ({ ...s, w: wide ? NARROW : WIDE }))} aria-label={wide ? "Narrow panel" : "Widen panel"} className="hidden size-8 cursor-pointer items-center justify-center rounded-lg text-text-tertiary hover:bg-background-secondary-default hover:text-text-primary md:flex">
                 {wide ? <RiContractLeftRightLine className="size-[18px]" /> : <RiExpandLeftRightLine className="size-[18px]" />}
               </button>
               <button type="button" onClick={onClose} aria-label="Close Canopy AI" className="flex size-8 cursor-pointer items-center justify-center rounded-lg text-text-tertiary hover:bg-background-secondary-default hover:text-text-primary">
@@ -319,11 +458,22 @@ export function AiPanel({
             </div>
 
             {/* body */}
-            <div ref={scroller} className="relative min-h-0 flex-1 overflow-y-auto" style={{ backgroundImage: "radial-gradient(var(--color-separator-border) 1px, transparent 1px)", backgroundSize: "18px 18px" }}>
+            <div ref={scroller} className="relative min-h-0 flex-1 overflow-y-auto overscroll-contain [scrollbar-width:thin]">
               {empty ? (
-                <div className="flex min-h-full flex-col items-center justify-center gap-6 px-6 py-10">
+                <div className="relative flex min-h-full flex-col items-center justify-center gap-6 px-6 py-10">
+                  {/* dot grid only behind the welcome, fading out before it reaches any edge */}
+                  <div
+                    aria-hidden
+                    className="pointer-events-none absolute inset-0"
+                    style={{
+                      backgroundImage: "radial-gradient(var(--color-separator-border) 1px, transparent 1px)",
+                      backgroundSize: "16px 16px",
+                      maskImage: "radial-gradient(ellipse 70% 55% at 50% 38%, black 25%, transparent 75%)",
+                      WebkitMaskImage: "radial-gradient(ellipse 70% 55% at 50% 38%, black 25%, transparent 75%)",
+                    }}
+                  />
                   <Orb />
-                  <div className="text-center">
+                  <div className="relative text-center">
                     <motion.p initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.1 }} className="text-[17px] font-medium tracking-[-0.01em] text-text-primary">
                       {greeting()}
                     </motion.p>
@@ -337,7 +487,7 @@ export function AiPanel({
                       <p className="text-body-2-regular text-text-secondary">{info?.reason}</p>
                     </div>
                   ) : (
-                    <ul className="flex w-full max-w-[340px] flex-col gap-2">
+                    <ul className="relative flex w-full max-w-[340px] flex-col gap-2">
                       {(info?.suggestions ?? []).map((s, i) => (
                         <motion.li key={s} initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.2 + i * 0.05 }}>
                           <button
@@ -407,15 +557,25 @@ export function AiPanel({
               )}
             </div>
 
-            {/* composer */}
-            <div className="shrink-0 p-3">
+            {/* composer: a soft fade so messages slide under it instead of being cut off */}
+            <div className="relative shrink-0 bg-background-primary-default px-3 pt-2 pb-4">
+              <div aria-hidden className="pointer-events-none absolute inset-x-0 -top-6 h-6 bg-linear-to-t from-background-primary-default to-transparent" />
               <form
                 onSubmit={(e) => {
                   e.preventDefault();
                   void send(draft);
                 }}
-                className="rounded-2xl border border-separator-border bg-background-primary-default p-2 shadow-xs transition-colors focus-within:border-text-tertiary"
+                className="relative rounded-2xl border border-separator-border bg-background-primary-default p-2 pt-3 shadow-xs transition-colors focus-within:border-text-tertiary"
               >
+                {/* grip: drag up or down to change the message box height, double-click to reset */}
+                <div
+                  onPointerDown={box.start}
+                  onDoubleClick={() => box.setH(BOX_DEFAULT)}
+                  title="Drag to resize · double-click to reset"
+                  className="group absolute inset-x-0 top-0 flex h-3 cursor-ns-resize justify-center pt-1"
+                >
+                  <span className={cx("h-1 w-8 rounded-full transition-colors", box.dragging ? "bg-brand" : "bg-separator-border group-hover:bg-text-tertiary")} />
+                </div>
                 <textarea
                   ref={input}
                   value={draft}
@@ -426,13 +586,12 @@ export function AiPanel({
                       void send(draft);
                     }
                   }}
-                  rows={2}
+                  style={{ height: box.h }}
                   disabled={!!unavailable}
                   placeholder={unavailable ? "Canopy AI is not set up on this server" : "Ask about crowns, runs, the boundary…"}
-                  className="block max-h-40 w-full resize-none bg-transparent px-2 py-1.5 text-body-2-regular text-text-primary outline-none placeholder:text-text-tertiary"
+                  className="block w-full resize-none bg-transparent px-2 py-1.5 text-body-2-regular text-text-primary outline-none placeholder:text-text-tertiary"
                 />
-                <div className="flex items-center justify-between gap-2 px-1">
-                  <span className="truncate text-caption-1-regular text-text-tertiary">Uses this workspace's data{info?.model ? ` · ${info.model}` : ""}</span>
+                <div className="flex items-center justify-end gap-2 px-1">
                   {busy ? (
                     <button type="button" onClick={stop} aria-label="Stop" className="flex size-8 cursor-pointer items-center justify-center rounded-full bg-text-primary text-background-primary-default">
                       <RiStopFill className="size-3.5" />

@@ -19,33 +19,36 @@ def _scene(n=12, seed=7):
     return rgb, centres
 
 
-def test_yolo11_detector_available():
-    ok, err = detector.available()
-    assert ok is True
-    assert err is None
+def test_variant_resolution_prefers_requested_then_nearest(monkeypatch):
+    monkeypatch.setattr(detector, "trained_variants", lambda: ["yolo11n-seg", "yolo11m-seg"])
+    assert detector.resolve_variant("yolo11m-seg") == "yolo11m-seg"
+    assert detector.resolve_variant("yolo11s-seg") == "yolo11m-seg"  # nearest, bigger wins the tie
+    assert detector.resolve_variant("bogus") == "yolo11m-seg"
+    monkeypatch.setattr(detector, "trained_variants", lambda: [])
+    assert detector.resolve_variant("yolo11s-seg") is None
 
 
-def test_yolo11_model_version():
-    ver = detector.model_version()
-    assert "ultralytics" in ver
-    assert ver["main_model"] == "yolo11s-seg.pt"
-    assert ver["fallback_model"] == "yolo11n-seg.pt"
+def test_untrained_server_reports_unavailable(monkeypatch):
+    monkeypatch.setattr(detector, "trained_variants", lambda: [])
+    ok, why = detector.available()
+    assert ok is False and why
 
 
-def test_yolo11_detect_returns_boxes_and_info():
-    rgb, _ = _scene()
-    boxes, info = detector.detect(rgb, m_per_px=0.10)
-    assert isinstance(boxes, np.ndarray)
-    assert boxes.ndim == 2 and (boxes.shape[1] == 5 if len(boxes) else True)
-    assert "model" in info
-    assert "model_variant" in info
-    assert info["model_variant"] in ("yolo11s-seg", "yolo11n-seg")
+def test_work_scale_keeps_training_band():
+    assert detector.work_scale(0.56, (1000, 1000)) == 1.0
+    assert abs(detector.work_scale(0.1, (1000, 1000)) - 0.1 / detector.MIN_WORK_GSD_M) < 1e-9
+    assert abs(detector.work_scale(1.12, (1000, 1000)) - 1.12 / detector.MAX_WORK_GSD_M) < 1e-9
+    assert detector.work_scale(10.0, (1000, 1000)) == detector.MAX_UPSAMPLE
 
 
-def test_yolo11_fallback_mechanism():
-    model_obj, meta = detector._model(force_fallback=True)
-    assert meta["is_fallback"] is True
-    assert meta["model_variant"] == "yolo11n-seg"
+def test_mask_crops_feed_crowns():
+    canopy = np.ones((60, 60), dtype=bool)
+    aoi = np.ones_like(canopy)
+    crop = np.zeros((22, 22), dtype=bool)
+    crop[4:18, 4:18] = True
+    labels, _, info = detector.crowns_from_boxes(np.array([[10, 10, 30, 30, 0.9]]), canopy, aoi, 0.5, masks=[(9, 9, crop)])
+    assert (labels == 1).sum() == 14 * 14
+    assert "segment" in info["outline_rule"]
 
 
 def test_crowns_from_boxes_one_region_per_box_and_trimmed_to_mask():

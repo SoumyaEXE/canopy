@@ -9,7 +9,7 @@ from rasterio import features
 from rasterio.transform import Affine
 from shapely.geometry import mapping
 from skimage import morphology
-from skimage.filters import threshold_otsu
+from skimage.filters import threshold_multiotsu, threshold_otsu
 
 from . import geo
 
@@ -87,6 +87,24 @@ def otsu_with_confidence(values: np.ndarray) -> dict:
         "confidence": "high" if confident else "low",
         "rule": "high if Sarle's bimodality coefficient > 5/9 and each class holds >= 5% of AOI pixels",
     }
+
+
+DENSE_MEDIAN_EXG = 0.10  # most of the scene is clearly green
+
+
+def dense_canopy_threshold(values: np.ndarray, otsu: dict) -> float | None:
+    """Lower threshold for closed canopy (and switches on dense-canopy crown mode), or None to keep Otsu.
+
+    In a scene that is mostly forest, the two populations Otsu separates are sunlit crowns and shaded
+    crowns, not trees and ground. When the split is weak and the median pixel is clearly green, a
+    three-class Otsu (ground / shade / sunlit canopy) is used and its lower cut separates ground from canopy.
+    """
+    v = values[np.isfinite(values)]
+    if otsu["confidence"] != "low" or v.size < 1000:
+        return None
+    if float(np.median(v)) <= DENSE_MEDIAN_EXG:
+        return None
+    return float(threshold_multiotsu(v, classes=3)[0])
 
 
 def aoi_mask(aoi_lonlat, transform: tuple, crs: str, shape: tuple[int, int]) -> np.ndarray:

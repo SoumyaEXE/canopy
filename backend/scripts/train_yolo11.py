@@ -89,27 +89,37 @@ def generate_yolo_dataset(
                 index, rgb, threshold, canopy, scene.m_per_px, 2.0
             )
 
-            # Extract bounding boxes for detected crowns
-            from scipy import ndimage as ndi
+            # Extract polygon segmentations for detected crowns
+            from skimage.measure import find_contours, regionprops
 
-            label_boxes = []
-            for lab in range(1, labels.max() + 1):
-                mask_lab = labels == lab
-                if not mask_lab.any():
+            label_lines = []
+            for rp in regionprops(labels):
+                r0, c0, r1, c1 = rp.bbox
+                if (c1 - c0) < 2 or (r1 - r0) < 2:
                     continue
-                rows, cols = np.where(mask_lab)
-                ymin, ymax = rows.min(), rows.max()
-                xmin, xmax = cols.min(), cols.max()
-                if (xmax - xmin) < 2 or (ymax - ymin) < 2:
+                crop = rp.image
+                padded = np.pad(crop.astype(np.uint8), 1)
+                contours = find_contours(padded, 0.5)
+                if not contours:
                     continue
-                # Normalize to [0, 1] for YOLO format: class_id x_center y_center width height
-                xc = ((xmin + xmax) / 2.0) / w
-                yc = ((ymin + ymax) / 2.0) / h
-                bw = (xmax - xmin) / w
-                bh = (ymax - ymin) / h
-                label_boxes.append((xc, yc, bw, bh))
+                ring = max(contours, key=len)
+                # Sample up to 24 points along the perimeter for crisp polygon representation
+                step = max(1, len(ring) // 24)
+                sampled = ring[::step]
+                if len(sampled) < 3:
+                    # Fallback to bounding polygon (xmin, ymin, xmax, ymax)
+                    pts_raw = [(c0, r0), (c1, r0), (c1, r1), (c0, r1)]
+                else:
+                    pts_raw = [(c - 1 + c0, r - 1 + r0) for r, c in sampled]
 
-            if not label_boxes:
+                pts = []
+                for cx, ry in pts_raw:
+                    x = cx / w
+                    y = ry / h
+                    pts.extend([f"{x:.5f}", f"{y:.5f}"])
+                label_lines.append("0 " + " ".join(pts))
+
+            if not label_lines:
                 continue
 
             is_val = (sample_count % int(1 / val_split)) == 0 if val_split > 0 else False
@@ -121,14 +131,14 @@ def generate_yolo_dataset(
             lbl_path = target_lbl_dir / f"{file_stem}.txt"
 
             img8 = (np.clip(rgb, 0, 1) * 255).astype(np.uint8)
-            Image.fromarray(img8).save(img8_path := img_path, quality=95)
+            Image.fromarray(img8).save(img_path, quality=95)
 
             with open(lbl_path, "w", encoding="utf-8") as f:
-                for xc, yc, bw, bh in label_boxes:
-                    f.write(f"0 {xc:.6f} {yc:.6f} {bw:.6f} {bh:.6f}\n")
+                for line in label_lines:
+                    f.write(f"{line}\n")
 
             sample_count += 1
-            print(f"    -> Generated sample {file_stem} ({len(label_boxes)} crowns)")
+            print(f"    -> Generated sample {file_stem} ({len(label_lines)} crown polygons)")
 
         except Exception as exc:
             print(f"[!] Warning: Failed to process polygon {poly_idx}: {exc}")
@@ -160,6 +170,13 @@ def train_yolo_models(
     output_models_dir.mkdir(parents=True, exist_ok=True)
     runs_dir = output_models_dir / "runs"
 
+    # Remove any stale label cache files from dataset
+    for cache_file in data_yaml.parent.glob("labels/**/*.cache"):
+        try:
+            cache_file.unlink()
+        except Exception:
+            pass
+
     models_to_train = [
         ("yolo11s-seg.pt", "yolo11s-seg-odisha.pt"),
         ("yolo11n-seg.pt", "yolo11n-seg-odisha.pt"),
@@ -181,13 +198,18 @@ def train_yolo_models(
                 verbose=True,
             )
             # Find best.pt and copy to output_models_dir
-            save_path = runs_dir / target_filename.replace(".pt", "") / "weights" / "best.pt"
+            candidate_paths = [
+                runs_dir / target_filename.replace(".pt", "") / "weights" / "best.pt",
+                *list(runs_dir.glob(f"**/{target_filename.replace('.pt', '')}*/weights/best.pt")),
+                *list(runs_dir.glob("**/best.pt")),
+            ]
+            found_best = next((p for p in candidate_paths if p.is_file()), None)
             dest_path = output_models_dir / target_filename
-            if save_path.is_file():
-                shutil.copy(save_path, dest_path)
-                print(f"[+] Saved fine-tuned weights to {dest_path}")
+            if found_best:
+                shutil.copy(found_best, dest_path)
+                print(f"[+] Saved fine-tuned weights from {found_best} to {dest_path}")
             else:
-                print(f"[!] Warning: best.pt not found at {save_path}")
+                print(f"[!] Warning: best.pt not found in {runs_dir}")
         except Exception as exc:
             print(f"[!] Error fine-tuning {base_weights}: {exc}")
 

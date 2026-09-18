@@ -1,0 +1,127 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>CANOPY product brief</title>
+<style>
+@page { size: A4; margin: 12mm 14mm 11mm; }
+* { box-sizing: border-box; }
+body { font-family: "Segoe UI", Arial, sans-serif; font-size: 9.3pt; line-height: 1.4; color: #1b1f1c; margin: 0; }
+h1 { font-size: 19pt; margin: 0; letter-spacing: -0.3px; }
+.sub { color: #55605a; margin: 0.5mm 0 3mm; font-size: 9.6pt; }
+h2 { font-size: 11pt; margin: 3.4mm 0 1.3mm; padding-bottom: 0.6mm; border-bottom: 1.3px solid #2f6b3f; color: #1f4d2c; }
+h3 { font-size: 9.6pt; margin: 2mm 0 0.8mm; color: #1f4d2c; }
+p { margin: 0 0 1.6mm; }
+ul { margin: 0 0 1.6mm; padding-left: 4.6mm; }
+li { margin-bottom: 0.6mm; }
+b { color: #111; }
+code { font-family: Consolas, monospace; font-size: 8.5pt; background: #eef2ee; padding: 0 2px; border-radius: 2px; }
+.lead { font-size: 10.2pt; background: #f1f6f1; border-left: 3px solid #2f6b3f; padding: 2mm 3mm; margin: 0 0 2.5mm; }
+.flow { display: flex; flex-wrap: wrap; align-items: center; gap: 1.1mm; margin: 1.4mm 0 2mm; font-size: 8.2pt; }
+.flow span.s { border: 1px solid #2f6b3f; background: #f1f6f1; border-radius: 3px; padding: 0.7mm 1.7mm; }
+.flow span.a { color: #2f6b3f; font-weight: bold; }
+table { border-collapse: collapse; width: 100%; font-size: 8.5pt; margin: 1mm 0 2mm; }
+td, th { border: 1px solid #cfd8d0; padding: 0.8mm 1.5mm; vertical-align: top; text-align: left; }
+th { background: #eef3ee; }
+td.n, th.n { text-align: right; white-space: nowrap; }
+tr.win td { background: #f3f9ef; font-weight: 600; }
+.two { display: grid; grid-template-columns: 1fr 1fr; gap: 5mm; }
+.pb { break-before: page; }
+.note { font-size: 8.2pt; color: #55605a; }
+.kpis { display: grid; grid-template-columns: repeat(4, 1fr); gap: 2mm; margin: 1mm 0 2.5mm; }
+.kpi { border: 1px solid #cfd8d0; border-radius: 4px; padding: 1.6mm 2.2mm; }
+.kpi b { display: block; font-size: 13pt; color: #1f4d2c; }
+.kpi span { font-size: 7.8pt; color: #55605a; }
+</style></head><body>
+
+<h1>CANOPY</h1>
+<p class="sub">Tree crowns from any imagery, with a measured accuracy and a reason for every number · Soumyadeep Dey · Flora Carbon challenge</p>
+
+<p class="lead"><b>In one line:</b> give CANOPY a KML boundary, a GeoTIFF, or even a plain screenshot, and it outlines every tree crown it can see, counts them as a range, scores each crown's confidence, shows every processing step as an image, and says plainly what it cannot measure.</p>
+
+<div class="kpis">
+  <div class="kpi"><b>54 / 61</b><span>trees found at 0.5 m satellite resolution, where DeepForest finds 1</span></div>
+  <div class="kpi"><b>0.1 – 10 m</b><span>per pixel: drone, aerial, satellite, and low-res screenshots</span></div>
+  <div class="kpi"><b>35 / 35</b><span>hostile input files handled with a clear message, zero crashes</span></div>
+  <div class="kpi"><b>Byte-identical</b><span>re-runs: same input, same GeoJSON, with a full audit zip</span></div>
+</div>
+
+<h2>The problem</h2>
+<p>Counting trees from imagery is easy to fake and hard to trust. A number with no accuracy figure, no way to see how it was produced, and no warning about bad input can't be audited, and in carbon work, what can't be audited doesn't count. The imagery we get in practice is also messy: KML boundaries over tropical forest where the best free satellite zoom is ~0.56 m per pixel, and screenshots with no location at all.</p>
+
+<h2>What I built</h2>
+<p>A full web app (not a notebook): React 19 + TypeScript front end, FastAPI + Python back end, with projects, run history, a map, a pipeline viewer, and a per-workspace AI assistant. It runs entirely on a normal laptop CPU.</p>
+<div class="flow">
+<span class="s">KML / KMZ / GeoJSON / GeoTIFF / PNG·JPG</span><span class="a">→</span><span class="s">validate &amp; measure area</span><span class="a">→</span><span class="s">imagery (Esri tiles or the file)</span><span class="a">→</span><span class="s">vegetation index</span><span class="a">→</span><span class="s">canopy mask (Otsu)</span><span class="a">→</span><span class="s">crowns: YOLO11-seg or classical</span><span class="a">→</span><span class="s">filter + confidence</span><span class="a">→</span><span class="s">height (if sun known)</span><span class="a">→</span><span class="s">GeoJSON · CSV · audit zip</span>
+</div>
+<ul>
+<li><b>Any input.</b> KML/KMZ with many polygons (you tick which ones), GeoJSON, drawn areas, located GeoTIFFs, and <b>plain PNG/JPG screenshots</b>. A plain image has no location, so CANOPY asks for its ground resolution (presets from drone 0.03 m to Sentinel-2 10 m) and measures everything in real metres.</li>
+<li><b>Large areas.</b> A pixel budget picks the finest zoom that fits in memory (zoom 18 down to 16) and says so. If the imagery provider has no data at a zoom (it returns grey "Map data not yet available" tiles, which happens in Odisha at zoom 19), CANOPY detects it and drops a zoom instead of counting "trees" in the placeholder text.</li>
+<li><b>Crown detection.</b> The classical detector finds crown centres as Laplacian-of-Gaussian blobs and grows them by watershed; in <b>dense forest</b> it switches to tracing sunlit crown tops between shadow gaps. An AI path (YOLO11 segmentation, in Fast / Balanced / High-accuracy sizes, fine-tuned on the Odisha polygons) is built in and is switched on only once its trained weights beat the classical detector; until then Auto falls back to classical and says why.</li>
+<li><b>Every crown has a confidence.</b> Shape, size against its 8 neighbours, separation, shadow and detector score are combined into high / medium / low, and the count is reported as a range, because a low-confidence blob is often two merged trees.</li>
+<li><b>Nothing is hidden.</b> The Pipeline tab shows all 7 stages as images with their numbers; rejected regions have their own map layer; the audit zip has every parameter.</li>
+<li><b>Canopy AI.</b> Each workspace has an assistant (You.com Research API) that answers from that workspace's own data and can propose a better run, which the user applies with one click.</li>
+</ul>
+
+<h2 class="pb">Why this model, and not the others</h2>
+<p><b>The constraint:</b> I have no GPU. Everything had to train and run on an Intel Core i3-1215U laptop (6 cores / 8 threads, 16 GB RAM). The data we will be given is Odisha KML polygons (Esri zoom 18 = 0.56 m/px, or zoom 17 = 1.1 m/px for big areas) and low-resolution Google Earth screenshots. So the model had to be <b>CPU-trainable, CPU-fast, and good at 0.5–1 m imagery</b>, not at 0.1 m drone imagery.</p>
+<table>
+<tr><th style="width:21%">Option</th><th>What it is</th><th style="width:40%">Why not (or why)</th></tr>
+<tr class="win"><td>YOLO11-seg n / s / m (chosen)</td><td>Ultralytics instance segmentation, 3–22 M parameters, pip install, runs on CPU</td><td>Trains on a CPU in hours, gives a mask per tree (not just a box), one model family in three sizes so the user trades speed for accuracy. Fine-tuned on the exact kind of imagery we will be tested on.</td></tr>
+<tr><td>DeepForest (RetinaNet)</td><td>The standard open tree detector, trained on NEON 0.1 m aerial imagery</td><td>I used and benchmarked it: excellent at 0.1 m (P 0.82 / R 0.74 on 61 labelled trees) but it <b>collapses at satellite resolution</b>: at 0.5 m it found 1 of 61 trees. Our data is 0.56–1.1 m. Boxes only, no crown shape.</td></tr>
+<tr><td>Detectree2 (Mask R-CNN)</td><td>Tropical crown delineation on detectron2</td><td>Detectron2 has no supported Windows/CPU install path, Mask R-CNN is slow on a CPU, and its weights are also trained on 0.1 m imagery.</td></tr>
+<tr><td>SAM / SAM 2</td><td>Promptable "segment anything" foundation model</td><td>Hundreds of MB and seconds per tile on a CPU, and it has no notion of "tree": it segments fields, roads and shadows just as happily, so it still needs a tree detector to prompt it.</td></tr>
+<tr><td>arXiv 2601.10931 (YOLOv11 vs Mask R-CNN on tree crowns)</td><td>Recent paper; best model YOLOv11-Seg</td><td>Useful confirmation that YOLO-seg is the right family, but its best score is mask mAP 0.281 on 150 training images, its weights and code are not released, and it does not compare against DeepForest. I reproduced the idea on our own data instead.</td></tr>
+<tr><td>Classical only</td><td>Vegetation index + blob markers + watershed</td><td>Kept as the always-available fallback and the label "teacher": transparent and deterministic, but it merges touching crowns in dense forest.</td></tr>
+</table>
+
+<h3>How I trained it without hand labels or a GPU</h3>
+<ul>
+<li><b>Data:</b> the 25 Odisha polygons from the challenge KML (random 233 m windows inside each, fetched at zoom 18) plus the two sample screenshots. Whole polygons are held out for validation, so the validation score is on ground the model never saw.</li>
+<li><b>Labels:</b> the classical pipeline labels every crown on the sharpest available imagery. Each chip is also <b>degraded 2× and 3× (averaged down to ~1.1 m and ~1.7 m, blurred, JPEG-compressed, then scaled back up), keeping the sharp-image labels</b>. The model learns to find crowns in blurry imagery using answers worked out on sharper imagery, which is exactly the low-resolution case. At run time any input is resampled to the same ~0.5 m grid first, so a crown is never smaller than the network can see.</li>
+<li><b>Training:</b> COCO-pretrained YOLO11-seg, fine-tuned at 416 px with flips, 90° rotations, scale and colour jitter (aerial images have no "up"), cosine LR, early stopping, time-capped per size so it always finishes on a laptop.</li>
+<li><b>First attempt failed, and why:</b> it used 3 whole 3,500 px scenes squashed to 400 px (a crown became ~1 px) for 2 epochs, and scored mAP 0 (it found 0–2 trees on the sample PNGs). Rebuilding the dataset as native-resolution chips fixed the root cause.</li>
+</ul>
+
+<h2 class="pb">Results</h2>
+<h3>Measured against 61 hand-labelled trees (DeepForest's OSBS benchmark tile, IoU ≥ 0.4)</h3>
+<table>
+<tr><th>Imagery</th><th>Method</th><th class="n">Found</th><th class="n">Matched</th><th class="n">Precision</th><th class="n">Recall</th><th class="n">F1</th></tr>
+<tr><td>0.1 m (drone / aerial)</td><td>DeepForest, as published</td><td class="n">55</td><td class="n">45</td><td class="n">0.82</td><td class="n">0.74</td><td class="n">0.78</td></tr>
+<tr><td>0.1 m</td><td>CANOPY classical</td><td class="n">39</td><td class="n">28</td><td class="n">0.72</td><td class="n">0.46</td><td class="n">0.56</td></tr>
+<tr class="win"><td>0.5 m (satellite, like Odisha)</td><td>CANOPY classical</td><td class="n">54</td><td class="n">39</td><td class="n">0.72</td><td class="n">0.64</td><td class="n">0.68</td></tr>
+<tr><td>0.5 m</td><td>DeepForest, as published</td><td class="n">1</td><td class="n">–</td><td class="n">–</td><td class="n">~0.02</td><td class="n">–</td></tr>
+<tr><td>1 m (low-res)</td><td>CANOPY classical</td><td class="n">38</td><td class="n">23</td><td class="n">0.61</td><td class="n">0.38</td><td class="n">0.46</td></tr>
+</table>
+<p class="note">The key row: at the resolution of the challenge imagery, the best off-the-shelf detector finds 1 tree out of 61; CANOPY finds 54 with 72% precision. The same image as a plain PNG (no location, resolution typed in) gives identical results.</p>
+
+<h3>Dense forest (the Odisha case): a fix found on the challenge's own screenshots</h3>
+<p>On a closed-canopy screenshot, a single greenness threshold splits <i>sunlit</i> crowns from <i>shaded</i> crowns instead of trees from ground. On the sample <code>image(2).png</code> that reported <b>6% cover</b> for an image that is mostly forest. CANOPY now detects this case (weak Otsu split, most pixels clearly green) and switches to a <b>dense-canopy mode</b>:</p>
+<ul>
+<li>a three-class split (ground / shade / sunlit) separates ground from <i>all</i> canopy: cover on that image went from <b>6% to 53%</b>, and on a second dense screenshot from 57% to 71%;</li>
+<li>inside the canopy, crowns are traced as <b>bright sunlit crown tops separated by dark shadow gaps</b>, the way a person reads dense forest, with a 5 m smallest crown so leaf clusters are not counted as trees.</li>
+</ul>
+<p>It only switches on for mostly-green scenes, so open woodland and the benchmark above are unchanged; the run's warnings say when it was used.</p>
+
+<h3>AI model status (honest)</h3>
+<p>The YOLO11 pipeline (dataset builder, CPU training, three sizes, model picker, fallbacks) is complete and tested. After the first overnight hour on the CPU, the Fast model had learned to fire on crowns but its confidence was still below the reporting cutoff (held-out mask mAP50 0.03 and rising), so the app does not use it yet: <b>Auto falls back to the classical detector with a warning until a trained model beats it on the benchmark above</b>. Training continues; a model is only switched on when it measurably wins.</p>
+
+<h2>Robustness and honesty</h2>
+<ul>
+<li><b>35 hostile inputs</b> (empty files, wrong extensions, self-intersecting or tiny polygons, 1-band or 16-bit rasters, geographic-CRS GeoTIFFs, huge areas, corrupted KMZ…) each end with a clear message or a correct result. Zero crashes.</li>
+<li><b>Deterministic:</b> the same input gives a byte-identical <code>crowns.geojson</code> (sorted keys, fixed rounding, fixed zip timestamps), checked by tests.</li>
+<li><b>Refuses instead of guessing:</b> no capture time means no height; no carbon or biomass figures at all; a warning whenever resolution was assumed, imagery was decimated, or the zoom was lowered.</li>
+<li><b>44 automated backend tests</b> pass; the front end type-checks cleanly.</li>
+</ul>
+
+<h2>Limitations I would tell a client</h2>
+<ul>
+<li>The YOLO labels come from the classical pipeline, not from people. The model learns to generalise and to handle blur, but in dense closed canopy some crowns are still merged. The Validation tab (click trees yourself, get precision/recall) is how to measure it on a new site.</li>
+<li>At 1 m per pixel a 3 m crown is 3 pixels. Canopy cover stays reliable; the crown count becomes a lower bound, and the app says so.</li>
+<li>Free satellite imagery has unknown capture dates, so heights and change over time need dated imagery.</li>
+</ul>
+
+<h2>What I would do next</h2>
+<ul>
+<li>Hand-label 200–300 crowns on Odisha imagery and fine-tune on them; that is the single biggest accuracy lever.</li>
+<li>Train the high-accuracy model longer on a GPU and add a tiled SAHI-style inference for very large areas.</li>
+<li>Add dated imagery (Sentinel-2 / Planet) for change detection.</li>
+</ul>
+</body></html>

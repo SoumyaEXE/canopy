@@ -1,4 +1,5 @@
-import { useState, type ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
+import { api } from "@/api/client";
 import { LinkButton } from "@/components/base/buttons/link-button";
 import { Checkbox } from "@/components/base/checkbox/checkbox";
 import { Input } from "@/components/base/input/input";
@@ -8,7 +9,7 @@ import { Slider } from "@/components/base/slider/slider";
 import { Switch } from "@/components/base/switch/switch";
 import type { LayerVisibility } from "@/components/canopy/map-view";
 import { cx } from "@/utils/cx";
-import type { JobParams, JobResult, SourceKind, VegIndex } from "@/types";
+import type { ModelsInfo, YoloVariant, JobParams, JobResult, SourceKind, VegIndex } from "@/types";
 
 export interface ParamControlProps {
   params: JobParams;
@@ -29,6 +30,48 @@ function FieldLabel({ children }: { children: ReactNode }) {
 /** "2026-09-14T10:30:00Z" <-> "2026-09-14T10:30" for a datetime-local field that is always read as UTC. */
 const toLocalField = (iso: string | null) => (iso ? iso.replace(/:\d{2}Z$|Z$/, "").slice(0, 16) : "");
 const fromLocalField = (value: string) => (/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/.test(value) ? `${value}:00Z` : null);
+
+const MODEL_NOTES: Record<YoloVariant, string> = {
+  "yolo11n-seg": "Fastest. About 3 M parameters; good for a quick look or a very large area.",
+  "yolo11s-seg": "Default. About 10 M parameters; the best balance of accuracy and time on a CPU.",
+  "yolo11m-seg": "Most accurate. About 22 M parameters; roughly 3x slower than Balanced.",
+};
+
+function ModelPicker({ value, onChange, disabled }: { value: YoloVariant; onChange: (v: YoloVariant) => void; disabled: boolean }) {
+  const [info, setInfo] = useState<ModelsInfo | null>(null);
+  useEffect(() => {
+    let live = true;
+    api.models().then((m) => live && setInfo(m)).catch(() => undefined);
+    return () => {
+      live = false;
+    };
+  }, []);
+  const trained = (id: YoloVariant) => !info || info.variants.some((v) => v.id === id && v.trained);
+  return (
+    <div className="flex flex-col gap-1.5">
+      <FieldLabel>AI model</FieldLabel>
+      <SegmentedControl
+        aria-label="AI model"
+        selectedKeys={[value]}
+        onSelectionChange={(keys) => {
+          const k = [...keys][0];
+          if (k) onChange(k as YoloVariant);
+        }}
+        isDisabled={disabled}
+        className="self-start"
+      >
+        <SegmentedControlItem id="yolo11n-seg" isDisabled={!trained("yolo11n-seg")}>Fast</SegmentedControlItem>
+        <SegmentedControlItem id="yolo11s-seg" isDisabled={!trained("yolo11s-seg")}>Balanced</SegmentedControlItem>
+        <SegmentedControlItem id="yolo11m-seg" isDisabled={!trained("yolo11m-seg")}>High accuracy</SegmentedControlItem>
+      </SegmentedControl>
+      <Hint>
+        {MODEL_NOTES[value]}
+        {info && !trained(value) ? " Not trained on this server yet; the nearest trained size is used." : ""}
+        {info && !info.available ? " No trained model is installed, so classical detection is used." : ""}
+      </Hint>
+    </div>
+  );
+}
 
 export function DetectionControls({ params, onParamsChange, result, disabled }: ParamControlProps) {
   const set = (patch: Partial<JobParams>) => onParamsChange({ ...params, ...patch });
@@ -62,9 +105,11 @@ export function DetectionControls({ params, onParamsChange, result, disabled }: 
         <Hint>
           {params.detector === "classical"
             ? "Blob-detected crown centres, then watershed on the canopy mask. No model."
-            : "YOLO11 AI segmentation (YOLO11s-seg with YOLO11n-seg fallback) on imagery of 0.2 m per pixel or finer, with outlines from the canopy mask. Coarser imagery, such as satellite basemaps, uses classical blob detection."}
+            : "YOLO11 segmentation fine-tuned on tree crowns, with outlines trimmed to the canopy mask. Falls back to classical if the model is missing or finds nothing."}
         </Hint>
       </div>
+
+      {params.detector !== "classical" && <ModelPicker value={params.yolo_variant ?? "yolo11s-seg"} onChange={(v) => set({ yolo_variant: v })} disabled={disabled} />}
 
       <div className="flex flex-col gap-1.5">
         <Slider
@@ -136,7 +181,7 @@ export const RESOLUTION_PRESETS: { label: string; value: number }[] = [
 
 /** Ground resolution for a plain image, which carries no scale of its own. */
 export function ResolutionField({ value, onChange, disabled }: { value: number | null | undefined; onChange: (v: number) => void; disabled?: boolean }) {
-  const [text, setText] = useState(value != null ? String(value) : "0.1");
+  const [text, setText] = useState(value != null ? String(value) : "0.3");
   const parsed = Number(text);
   const invalid = !(parsed > 0.005 && parsed <= 30);
   return (
@@ -186,7 +231,7 @@ export function ImageryControls({ params, onParamsChange, sourceKind, disabled }
       <div className="flex flex-col gap-1.5">
         <FieldLabel>Plain image</FieldLabel>
         <Hint>This image has no location or scale of its own, so tell CANOPY how many metres one pixel covers.</Hint>
-        <ResolutionField value={params.image_m_per_px ?? 0.1} onChange={(v) => onParamsChange({ ...params, image_m_per_px: v })} disabled={disabled} />
+        <ResolutionField value={params.image_m_per_px ?? 0.3} onChange={(v) => onParamsChange({ ...params, image_m_per_px: v })} disabled={disabled} />
       </div>
     );
   }

@@ -3,9 +3,19 @@
 export type VegIndex = "exg" | "vari" | "ndvi";
 export type ConfidenceBucket = "high" | "medium" | "low";
 export type Detector = "hybrid" | "classical";
+export type YoloVariant = "yolo11n-seg" | "yolo11s-seg" | "yolo11m-seg";
+
+export interface ModelsInfo {
+  available: boolean;
+  reason: string | null;
+  default: YoloVariant;
+  variants: { id: YoloVariant; label: string; trained: boolean }[];
+}
 
 export interface JobParams {
   detector: Detector;
+  /** AI detector size: n fast, s balanced, m high accuracy. */
+  yolo_variant?: YoloVariant;
   min_crown_diameter_m: number;
   veg_index: VegIndex;
   threshold_mode: "otsu" | "manual";

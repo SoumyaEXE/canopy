@@ -1,0 +1,201 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>CANOPY tab guide</title>
+<style>
+@page { size: A4; margin: 11mm 13mm 10mm; }
+* { box-sizing: border-box; }
+body { font-family: "Segoe UI", Arial, sans-serif; font-size: 9.4pt; line-height: 1.4; color: #1b1f1c; margin: 0; }
+h1 { font-size: 19pt; margin: 0; letter-spacing: -0.3px; }
+.sub { color: #55605a; margin: 0.5mm 0 3mm; font-size: 9.6pt; }
+h2 { font-size: 12pt; margin: 0 0 1.5mm; color: #1f4d2c; display: flex; align-items: baseline; gap: 2mm; }
+h2 .no { font-size: 9pt; color: #fff; background: #2f6b3f; border-radius: 3px; padding: 0.2mm 1.6mm; }
+h2 .where { font-size: 8.4pt; color: #55605a; font-weight: normal; margin-left: auto; }
+p { margin: 0 0 1.4mm; }
+ul { margin: 0 0 1.4mm; padding-left: 4.4mm; }
+li { margin-bottom: 0.5mm; }
+b { color: #111; }
+code { font-family: Consolas, monospace; font-size: 8.4pt; background: #eef2ee; padding: 0 2px; border-radius: 2px; }
+.tab { break-inside: avoid; margin: 0 0 5mm; }
+.shot { width: 100%; border: 1px solid #cfd8d0; border-radius: 4px; display: block; margin: 0 0 2mm; }
+.cols { display: grid; grid-template-columns: 1fr 1fr; gap: 4mm; }
+.say { background: #f1f6f1; border-left: 3px solid #2f6b3f; padding: 1.4mm 2.6mm; margin: 1mm 0 0; font-style: italic; }
+.say b { font-style: normal; color: #1f4d2c; }
+.pb { break-before: page; }
+table { border-collapse: collapse; width: 100%; font-size: 8.6pt; margin: 1mm 0 3mm; }
+td, th { border: 1px solid #cfd8d0; padding: 0.8mm 1.5mm; vertical-align: top; text-align: left; }
+th { background: #eef3ee; }
+h3 { font-size: 9.4pt; margin: 0 0 0.8mm; color: #1f4d2c; }
+</style></head><body>
+
+<h1>CANOPY: tab-by-tab guide</h1>
+<p class="sub">What each screen shows, what you can do on it, and one line to say about it in the demo.</p>
+
+<table>
+<tr><th style="width:18%">Screen</th><th>In one sentence</th></tr>
+<tr><td>Projects</td><td>Every workspace, with a thumbnail of its latest crowns, its cover and its crown range.</td></tr>
+<tr><td>New workspace</td><td>Upload a file (KML, KMZ, GeoJSON, GeoTIFF, PNG, JPG), draw an area, or use the sample, then review before anything is created.</td></tr>
+<tr><td>Delete workspace</td><td>Type the workspace's name to confirm, so nothing is deleted by accident.</td></tr>
+<tr><td>Overview</td><td>The headline numbers: cover, crowns, plausible range, confidence, height, warnings and downloads.</td></tr>
+<tr><td>Map + Parameters</td><td>Crowns on the imagery, plus every setting (detector, AI model size, crown size, threshold) with one-click re-runs.</td></tr>
+<tr><td>Crowns</td><td>A table of every crown with its measurements and why it got its confidence score.</td></tr>
+<tr><td>Pipeline</td><td>The 7 processing stages as images you can step through, each with its method and numbers.</td></tr>
+<tr><td>Validation</td><td>Click real trees in a small patch to measure precision and recall on your own site.</td></tr>
+<tr><td>Runs</td><td>History of every run, what changed between them, and the results side by side.</td></tr>
+<tr><td>Audit</td><td>Downloads (GeoJSON, CSV, overlay, audit zip) and the manifest of how the numbers were made.</td></tr>
+<tr><td>Limitations</td><td>What the tool cannot measure, stated plainly.</td></tr>
+<tr><td>Ask AI</td><td>A per-workspace assistant that answers from this workspace's data and can propose a better run.</td></tr>
+</table>
+
+<div class="tab">
+<h2><span class="no">1</span>Projects<span class="where">sidebar → All projects</span></h2>
+<img class="shot" src="shots/projects.png" alt="Projects page">
+<div class="cols">
+<div><h3>What it shows</h3><ul>
+<li>Totals across all workspaces: projects, runs, area analysed, crowns detected.</li>
+<li>One card per workspace: input type badge (KML, Image, GeoTIFF…), a thumbnail with crowns drawn on it, canopy cover and crown range.</li>
+</ul></div>
+<div><h3>What you can do</h3><ul>
+<li>Search by name or file, sort by recent, name or cover.</li>
+<li>Open, rename or delete a workspace from the ⋮ menu; start a new one.</li>
+</ul></div>
+</div>
+<p class="say"><b>Say:</b> "Each workspace keeps its input, its parameters and every run, so the work is never lost and always reproducible."</p>
+</div>
+
+<div class="tab pb">
+<h2><span class="no">2</span>New workspace<span class="where">New project button</span></h2>
+<div class="cols">
+<img class="shot" src="shots/new_project.png" alt="New workspace dialog">
+<img class="shot" src="shots/review.png" alt="Review step">
+</div>
+<div class="cols">
+<div><h3>What it shows</h3><ul>
+<li>Three ways in: <b>upload a file</b>, <b>draw on the map</b>, or the <b>sample area</b>.</li>
+<li>After upload, a <b>review step</b>: file type, size, pixel dimensions, number of polygons, and what will happen next.</li>
+<li>For a plain PNG/JPG (no location): a <b>ground resolution</b> field with presets: Drone 0.03 m, Aerial 0.1 m, Satellite HD 0.3 m, Satellite 0.5 m, Coarse 1 m, Sentinel-2 10 m.</li>
+</ul></div>
+<div><h3>What you can do</h3><ul>
+<li>Pick which polygons of a multi-polygon KML to analyse (select all, or tick a few).</li>
+<li>Change the file, or cancel; nothing is created until you press <b>Create workspace</b>.</li>
+<li>A growing-folder animation plays while the workspace is created and the first run starts.</li>
+</ul></div>
+</div>
+<p class="say"><b>Say:</b> "A screenshot has no scale, so CANOPY asks for it instead of guessing; every area and diameter is then in real metres."</p>
+</div>
+
+<div class="tab">
+<h2><span class="no">3</span>Delete workspace<span class="where">⋮ menu → Delete</span></h2>
+<img class="shot" src="shots/delete.png" alt="Delete confirmation" style="width:70%">
+<p>The dialog says exactly what will be lost (the uploaded file, every run and its audit bundle). The red button stays disabled until the workspace name is typed exactly.</p>
+<p class="say"><b>Say:</b> "Destructive actions need the name typed, the same pattern GitHub uses for deleting a repository."</p>
+</div>
+
+<div class="tab pb">
+<h2><span class="no">4</span>Overview<span class="where">workspace → Overview</span></h2>
+<img class="shot" src="shots/overview.png" alt="Overview">
+<div class="cols">
+<div><h3>What it shows</h3><ul>
+<li><b>Canopy cover</b> (% of the area and hectares), <b>crowns detected</b>, the <b>plausible range</b>, the share of <b>high-confidence</b> crowns, and <b>height</b> (only when the capture time is known).</li>
+<li>Crown size distribution (area, diameter or height), the confidence breakdown, and a map preview.</li>
+<li><b>Warnings</b>: every assumption the run made (zoom lowered, resolution assumed, low-contrast threshold…).</li>
+</ul></div>
+<div><h3>What you can do</h3><ul>
+<li>Switch the chart between area, diameter and height.</li>
+<li>Download crowns (GeoJSON, CSV) from Exports.</li>
+<li>Small arrows show the change against the previous run.</li>
+</ul></div>
+</div>
+<p class="say"><b>Say:</b> "The count is a range, not one number, because a low-confidence blob is often two merged trees. The warnings list every assumption behind it."</p>
+</div>
+
+<div class="tab pb">
+<h2><span class="no">5</span>Map and Parameters<span class="where">workspace → Map</span></h2>
+<img class="shot" src="shots/map.png" alt="Map with parameters">
+<div class="cols">
+<div><h3>Left: Parameters</h3><ul>
+<li><b>Crown detector</b>: Auto (AI) or Classical.</li>
+<li><b>AI model</b>: Fast (YOLO11n), Balanced (YOLO11s, default), High accuracy (YOLO11m). Sizes that are not trained are greyed out.</li>
+<li><b>Min crown diameter</b>, <b>vegetation index</b> (ExG, VARI, NDVI), <b>threshold</b> (Otsu or manual), <b>tile zoom</b>, capture time for height, and resolution for plain images.</li>
+<li><b>Re-run on change</b>: the analysis re-runs by itself after you stop moving a slider.</li>
+</ul></div>
+<div><h3>Centre and right</h3><ul>
+<li>Map layers: imagery, canopy mask, crowns (coloured by confidence, area or height), and <b>rejected</b> regions, so nothing disappears silently.</li>
+<li>Click a crown for its measurements. The Style tab changes colours and fill.</li>
+<li>Right panel: results for the run being viewed.</li>
+</ul></div>
+</div>
+<p class="say"><b>Say:</b> "You choose speed or accuracy: Fast for a quick look at a big area, High accuracy when the count matters. The run history keeps both."</p>
+</div>
+
+<div class="tab pb">
+<h2><span class="no">6</span>Crowns<span class="where">workspace → Crowns</span></h2>
+<img class="shot" src="shots/crowns.png" alt="Crowns table">
+<ul>
+<li>Every crown: ID, confidence (high / medium / low and the score), area, diameter, height, solidity, and whether it touches the edge.</li>
+<li>Filter chips: All, High, Medium, Low, Edge, Rejected. Click a row to see the <b>four signals</b> behind its score (shape, size against its neighbours, separation, shadow, plus the AI detector's own score).</li>
+</ul>
+<p class="say"><b>Say:</b> "Every crown can explain its own confidence score. Nothing is a black box."</p>
+</div>
+
+<div class="tab pb">
+<h2><span class="no">7</span>Pipeline<span class="where">workspace → Pipeline</span></h2>
+<img class="shot" src="shots/pipeline.png" alt="Pipeline viewer">
+<ul>
+<li>The 7 stages: <b>source imagery → vegetation index → threshold → cleaned canopy mask → crown centres (or AI boxes) → crown segments → filtered and scored crowns</b>.</li>
+<li>Each stage is a real image from this run, with a <b>blend slider</b> to fade it over the imagery, its <b>method</b> in plain words, and its <b>numbers</b> (resolution, threshold, counts).</li>
+<li>Press <b>play</b> to walk through all stages automatically.</li>
+</ul>
+<p class="say"><b>Say:</b> "Most tools show the final map. This shows every intermediate step, so a reviewer can see exactly where a mistake would come from."</p>
+</div>
+
+<div class="tab pb">
+<h2><span class="no">8</span>Validation<span class="where">workspace → Validation</span></h2>
+<img class="shot" src="shots/validation.png" alt="Validation mode">
+<ol>
+<li>Mark a small patch on the map (about a quarter of a hectare).</li>
+<li>Click the centre of every tree you can see in it; the detections are hidden so you are not biased.</li>
+<li>CANOPY returns <b>precision, recall, F1</b>, matched / unmatched / missed trees, a <b>correction factor</b>, an adjusted count for the whole area, and optionally a small <b>local calibration model</b>.</li>
+</ol>
+<p class="say"><b>Say:</b> "On a new site you don't have to trust my numbers: two minutes of clicking gives you measured precision and recall there."</p>
+</div>
+
+<div class="tab pb">
+<h2><span class="no">9</span>Runs<span class="where">workspace → Runs</span></h2>
+<img class="shot" src="shots/runs.png" alt="Run history">
+<ul>
+<li>Every run of this workspace: status, when it started, <b>what changed</b> from the previous run (for example "Model balanced (s) → high accuracy (m)"), cover, crown range, and high-confidence share.</li>
+<li>View any old run, or download its bundle.</li>
+</ul>
+<p class="say"><b>Say:</b> "Change one setting, re-run, and the history shows exactly what moved the numbers."</p>
+</div>
+
+<div class="tab">
+<h2><span class="no">10</span>Audit<span class="where">workspace → Audit</span></h2>
+<img class="shot" src="shots/audit.png" alt="Audit">
+<ul>
+<li><b>Exports</b>: crowns as GeoJSON and CSV, an overlay PNG, and the <b>audit bundle</b> zip (all outputs, manifest, summary, limitations).</li>
+<li><b>Manifest</b>: input type, how it was interpreted, imagery source and zoom, fetch time, resolution and how it was computed, CRS, index range, confidence weights, area.</li>
+<li><b>Reproducibility</b>: the same input and parameters give a byte-identical <code>crowns.geojson</code>.</li>
+</ul>
+<p class="say"><b>Say:</b> "An auditor can re-run this and get the same bytes. That's what makes a number usable in carbon work."</p>
+</div>
+
+<div class="tab pb">
+<h2><span class="no">11</span>Limitations<span class="where">sidebar → Limitations</span></h2>
+<img class="shot" src="shots/limitations.png" alt="Limitations">
+<p>A plain list of what CANOPY cannot do: no carbon or biomass figures, merged crowns in dense canopy, understorey hidden under the canopy, unknown imagery dates, and height only when the sun position is known.</p>
+<p class="say"><b>Say:</b> "I'd rather tell you what it can't do than show a number I can't back up."</p>
+</div>
+
+<div class="tab pb">
+<h2><span class="no">12</span>Ask AI<span class="where">Ask AI button, or Ctrl + I</span></h2>
+<img class="shot" src="shots/ai_panel.png" alt="Canopy AI panel">
+<ul>
+<li>A panel slides in from the right. It knows this workspace: its boundary, its runs, its numbers and its warnings.</li>
+<li>Suggested questions: summarise the workspace, explain the boundary and imagery, why some crowns are low confidence, how to get a more accurate count.</li>
+<li>When it suggests a better setting, an <b>Apply and run</b> card appears; nothing runs without your click. Web facts come with numbered source links.</li>
+<li>Runs on the You.com Research API (lite tier, about 1 cent per question).</li>
+</ul>
+<p class="say"><b>Say:</b> "The assistant reads this workspace's own data first, so it explains <i>these</i> numbers rather than giving generic advice."</p>
+</div>
+
+</body></html>

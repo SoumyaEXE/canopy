@@ -134,20 +134,50 @@ def score(pred: list, gt: list) -> dict:
     return {"detected": len(pred), "labelled": len(gt), "matched": tp, "precision": precision, "recall": recall, "f1": f1}
 
 
+def run_deepforest_direct(tif_bytes: bytes, utm: str) -> tuple[list, float]:
+    from deepforest import main as df_main
+    import torch
+    
+    try:
+        torch.set_num_threads(max(1, min(4, os.cpu_count() or 2)))
+    except Exception:
+        pass
+
+    model = df_main.deepforest()
+    model.use_release()
+
+    with tempfile.TemporaryDirectory() as tmp:
+        p = Path(tmp) / "eval.tif"
+        p.write_bytes(tif_bytes)
+        t0 = time.perf_counter()
+        boxes_df = model.predict_tile(str(p), patch_size=400, patch_overlap=0.25)
+        secs = time.perf_counter() - t0
+
+        with rasterio.open(p) as src:
+            t = src.transform
+
+        boxes = []
+        if boxes_df is not None and not boxes_df.empty:
+            for r in boxes_df.itertuples():
+                x0, y0 = t * (r.xmin, r.ymin)
+                x1, y1 = t * (r.xmax, r.ymax)
+                boxes.append(box(min(x0, x1), min(y0, y1), max(x0, x1), max(y0, y1)))
+        return boxes, secs
+
+
 def run_one(tif: bytes, detector: str, min_d: float, utm: str, kind: str = "geotiff", image_m: float | None = None,
-            origin: tuple[float, float] | None = None) -> tuple[list, float, dict]:
+            origin: tuple[float, float] | None = None, yolo_variant: str = "yolo11s-seg") -> tuple[list, float, dict]:
     parsed = ingest.ParsedInput(kind=kind, aoi_lonlat=None, raster_bytes=tif, sha256=ingest.sha256_bytes(tif),
                                 filename="v.png" if kind == "image" else "v.tif")
     params = {"detector": detector, "min_crown_diameter_m": min_d, "veg_index": "exg", "threshold_mode": "otsu",
               "threshold_manual": None, "tile_zoom": 18, "acquisition_datetime_utc": None, "enable_height": False,
-              "image_m_per_px": image_m}
+              "image_m_per_px": image_m, "yolo_variant": yolo_variant}
     with tempfile.TemporaryDirectory() as tmp:
         t0 = time.perf_counter()
         result = run_pipeline("bench", Path(tmp), parsed, params, lambda *_: None)
         secs = time.perf_counter() - t0
         fc = json.loads((Path(tmp) / "crowns.geojson").read_text(encoding="utf-8"))
     if kind == "image":
-        # A plain image sits at 0°N 0°E in Web Mercator with 1 unit = 1 m, so its metres map straight onto the tile.
         to_utm = Transformer.from_crs("EPSG:4326", "EPSG:3857", always_xy=True)
         shift = origin or (0.0, 0.0)
     else:
@@ -157,33 +187,62 @@ def run_one(tif: bytes, detector: str, min_d: float, utm: str, kind: str = "geot
     for f in fc["features"]:
         xs, ys = zip(*((a + shift[0], b + shift[1]) for a, b in (to_utm.transform(x, y) for x, y in f["geometry"]["coordinates"][0])))
         boxes.append(box(min(xs), min(ys), max(xs), max(ys)))
-    return boxes, secs, result["summary"]
+    return boxes, secs, {**result["summary"], "detector_used": result.get("pipeline", {}).get("detector")}
 
 
 def main() -> None:
     ap = argparse.ArgumentParser()
-    ap.add_argument("--detector", choices=["hybrid", "classical", "both"], default="both")
+    ap.add_argument("--detector", choices=["hybrid", "classical", "deepforest", "both", "all"], default="all")
+    ap.add_argument("--yolo-variant", choices=["yolo11n-seg", "yolo11s-seg", "yolo11m-seg", "yolo11l-seg"], default="yolo11s-seg")
     ap.add_argument("--variants", nargs="+", default=["native", "wgs84", "0.5m", "1m", "3x3 mosaic", "png", "png 0.5m", "png 1m"])
     ap.add_argument("--min-crown", type=float, default=3.0)
     ap.add_argument("--json", type=Path, help="also write the results table as JSON")
     args = ap.parse_args()
 
     gt, utm, raw, t = ground_truth()
-    dets = ["hybrid", "classical"] if args.detector == "both" else [args.detector]
+    
+    if args.detector == "all":
+        dets = ["hybrid", "classical", "deepforest"]
+    elif args.detector == "both":
+        dets = ["hybrid", "classical"]
+    else:
+        dets = [args.detector]
+
     rows = []
+    print("\n=================== FLORA CANOPY BENCHMARK SUITE ===================")
+    print(f"Ground truth target: {len(gt)} hand-labelled crowns (OSBS_029 NEON Florida)")
+    print(f"YOLO Model Variant: {args.yolo_variant}")
+    print("--------------------------------------------------------------------\n")
+
     for name, spec in variants(raw, gt, args.variants).items():
         tif, truth = spec[0], spec[1]
         kind, image_m = (spec[2], spec[3]) if len(spec) > 2 else ("geotiff", None)
+        
         for det in dets:
-            pred, secs, summary = run_one(tif, det, args.min_crown, utm, kind, image_m, (t.c, t.f))
+            if det == "deepforest":
+                pred, secs = run_deepforest_direct(tif, utm)
+                summary_count = {"crown_count_range": [len(pred), len(pred)]}
+            else:
+                pred, secs, summary = run_one(tif, det, args.min_crown, utm, kind, image_m, (t.c, t.f), args.yolo_variant)
+                summary_count = summary
+
             s = score(pred, truth)
-            rows.append({"variant": name, "detector": det, "seconds": round(secs, 1),
-                         "count_range": summary["crown_count_range"], **s})
-            print(f"{name:11s} {det:9s} found {s['detected']:4d}/{s['labelled']:<4d} matched {s['matched']:4d}  "
-                  f"P {s['precision']:.2f}  R {s['recall']:.2f}  F1 {s['f1']:.2f}  ({secs:.1f}s)", flush=True)
+            count_err = abs(len(pred) - len(truth))
+            rows.append({
+                "variant": name,
+                "detector": f"YOLO-{args.yolo_variant}" if det == "hybrid" else det,
+                "seconds": round(secs, 2),
+                "count_error": count_err,
+                **s
+            })
+            model_lbl = f"YOLO-{args.yolo_variant.split('-')[0]}" if det == "hybrid" else det
+            print(f"{name:11s} {model_lbl:15s} found {s['detected']:4d}/{s['labelled']:<4d} matched {s['matched']:4d}  "
+                  f"P {s['precision']:.2f}  R {s['recall']:.2f}  F1 {s['f1']:.2f}  Err {count_err:2d}  ({secs:.2f}s)", flush=True)
+
     if args.json:
         args.json.write_text(json.dumps({"iou_threshold": IOU, "min_crown_diameter_m": args.min_crown, "rows": rows}, indent=2), encoding="utf-8")
 
 
 if __name__ == "__main__":
     main()
+

@@ -218,7 +218,7 @@ def _kmz_bytes(data: bytes) -> bytes:
 IMAGE_EXTENSIONS = (".png", ".jpg", ".jpeg", ".webp", ".bmp")
 # Plain images carry no location or scale. Their scale is entered by the user; this is the fallback, the
 # resolution of NEON airborne imagery, which is what DeepForest's own sample images (e.g. OSBS_029.png) are.
-DEFAULT_IMAGE_M_PER_PX = 0.1
+DEFAULT_IMAGE_M_PER_PX = 0.3  # a Google Earth / Maxar screenshot at close zoom
 
 
 def read_features(filename: str, data: bytes) -> tuple[str, list[AreaFeature]]:

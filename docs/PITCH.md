@@ -10,8 +10,8 @@ Anyone can draw circles on trees. The hard part is trusting the number. A crown 
 
 ## What it does
 
-1. **You give it an area**: upload a KML, KMZ, GeoJSON or GeoTIFF, or draw on the map.
-2. **It finds the trees**: canopy cover, a crown count given as a range, and a confidence score for each crown.
+1. **You give it an area**: upload a KML, KMZ, GeoJSON, GeoTIFF, or a plain PNG/JPG screenshot (you enter its resolution), or draw on the map. You review the file before anything is created.
+2. **It finds the trees**: a YOLO11 segmentation model fine-tuned on Odisha imagery, in three sizes (Fast / Balanced / High accuracy), with a classical fallback. Canopy cover, a crown count given as a range, and a confidence score for each crown.
 3. **It shows its work**: the Pipeline tab steps through each of the 7 stages as images you can inspect.
 4. **You can ask it**: Canopy AI answers questions about your workspace from its own data, and can suggest a better run that you apply with one click.
 5. **Everything is auditable**: a downloadable bundle holds every parameter, and re-running the same input gives byte-identical output.
@@ -21,7 +21,7 @@ Anyone can draw circles on trees. The hard part is trusting the number. A crown 
 | | Typical submission | CANOPY |
 |---|---|---|
 | Accuracy | A count | **Precision and recall against 61 hand-labelled trees** |
-| Detector | One model, or one classical method | **Picks by resolution**: DeepForest AI on fine imagery, and a classical blob detector on satellite imagery, where it measured better |
+| Detector | A stock model trained on someone else's imagery | **YOLO11-seg fine-tuned on the challenge's own Odisha polygons**, trained to read blurry low-res imagery; you pick Fast, Balanced or High accuracy |
 | Explainability | Final map only | **Every stage as an image, with its numbers** |
 | Bad input | Crashes or silent nonsense | **35 hostile files tested, 0 crashes**, each refused with a plain reason |
 | Reproducibility | – | Byte-identical re-runs, audit zip |
@@ -50,8 +50,17 @@ Plain DeepForest gives 55 trees on the original image, about the same as us, but
 6. **Break it** (30 s). Upload `docs/demo/broken.kml` and a clear error appears. *"We tested 35 hostile inputs."*
 7. **Audit tab** (30 s). Download the audit zip. *"Same input, same bytes."*
 
+## Why YOLO11, not DeepForest / Detectree2 / SAM (short version)
+
+- **No GPU** (i3-1215U, 16 GB): the model had to train and run on a laptop CPU. YOLO11-seg does both.
+- **DeepForest** is great at 0.1 m but found 1 of 61 trees at 0.5 m. The challenge imagery is 0.56–1.1 m.
+- **Detectree2** needs detectron2 (no Windows/CPU install path). **SAM** is heavy and doesn't know what a tree is.
+- **arXiv 2601.10931** agrees YOLO-seg is the right family, but its weights aren't released, so I trained my own on our data.
+- **How, without hand labels:** the classical pipeline labels crowns on the sharpest imagery; the model trains on 2× and 3× blurred copies with those sharp labels, so it learns to read low-res imagery.
+
 ## Hard questions and straight answers
 
+- **"Your labels come from your own classical method, so how can the model beat it?"** On sharp imagery it mostly matches it. The gain is on blurry imagery: it was trained on degraded copies with labels made on the sharp version, which the classical method never sees. The Validation tab measures it on any new site.
 - **"Did you tune on the test image?"** Partly, and we say so. The 0.2 m switch point and two settings were chosen on it. The benchmark script is in the repo, so run it on your own labelled tiles.
 - **"Why did the sample go from 532 to 1,107 crowns?"** The new detector finds small crowns the old one merged, and it also splits some big oaks. That scene has no labels, so we use the Validation tab to measure it rather than guess.
 - **"Why is 1 m weak?"** At 1 m a 3 m crown is 3 pixels. We warn about it and keep canopy cover, which is still reliable.

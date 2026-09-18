@@ -193,11 +193,11 @@ def blob_response(index: np.ndarray, rgb: np.ndarray, threshold: float) -> np.nd
     return img
 
 
-def _blob_log_windowed(resp: np.ndarray, min_sigma: float, max_sigma: float) -> np.ndarray:
+def _blob_log_windowed(resp: np.ndarray, min_sigma: float, max_sigma: float, overlap: float = BLOB_OVERLAP) -> np.ndarray:
     from skimage.feature import blob_log
 
     kw = dict(min_sigma=min_sigma, max_sigma=max_sigma, num_sigma=BLOB_NUM_SIGMA, threshold=BLOB_THRESHOLD,
-              overlap=BLOB_OVERLAP, exclude_border=False)
+              overlap=overlap, exclude_border=False)
     h, w = resp.shape
     if h <= BLOB_WINDOW and w <= BLOB_WINDOW:
         return blob_log(resp, **kw)
@@ -255,6 +255,66 @@ def segment_blobs(
         "blobs_total": int(len(blobs)),
         "markers": len(keep),
         "_marker_coords": np.array([(r, c) for r, c, _ in keep], dtype=np.int64).reshape(-1, 2),
+        "_response": resp,
+    }
+    return labels.astype(np.int32), separation_map(labels), info
+
+
+DENSE_MIN_CROWN_M = 5.0  # closed-canopy crowns: smaller blobs are leaf clusters, not trees
+DENSE_SMOOTH_M = 0.5
+DENSE_BLOB_OVERLAP = 0.5
+
+
+def segment_dense(
+    rgb: np.ndarray, canopy: np.ndarray, aoi: np.ndarray, m_per_px: float, min_crown_diameter_m: float
+) -> tuple[np.ndarray, np.ndarray, dict]:
+    """Closed-canopy crowns: sunlit crown tops are bright domes, and the gaps between crowns are shadow.
+
+    Greenness cannot separate touching crowns (everything is green), so inside the canopy the darker
+    Otsu class of brightness is treated as inter-crown shadow, and crowns are brightness blobs on what is
+    left, grown by watershed and stopped at the shadow gaps.
+    """
+    from skimage.filters import threshold_otsu
+
+    lum = rgb.mean(axis=-1, dtype=np.float32)
+    inside = canopy & aoi
+    shade_t = float(threshold_otsu(lum[inside])) if inside.sum() > 100 else 0.0
+    from .vegetation import canopy_mask
+
+    # Same clean-up as the canopy mask (opening, closing, small objects and holes), so crowns are solid.
+    sunlit, _ = canopy_mask((inside & (lum >= shade_t)).astype(np.float32), aoi, m_per_px, 0.5)
+    min_d = max(min_crown_diameter_m, DENSE_MIN_CROWN_M)
+    resp = ndi.gaussian_filter(lum, DENSE_SMOOTH_M / m_per_px) * sunlit
+    top = float(resp.max())
+    resp = (resp / top).astype(np.float32) if top > 0 else resp.astype(np.float32)
+    min_sigma = max(0.7, (min_d / 2.0) / m_per_px / math.sqrt(2))
+    max_sigma = max(min_sigma + 0.5, BLOB_MAX_RADIUS_M / m_per_px / math.sqrt(2))
+    blobs = _blob_log_windowed(resp, min_sigma, max_sigma, overlap=DENSE_BLOB_OVERLAP)
+    h, w = canopy.shape
+    keep = sorted((int(round(a)), int(round(b)), float(s) * math.sqrt(2)) for a, b, s in blobs
+                  if 0 <= int(round(a)) < h and 0 <= int(round(b)) < w and sunlit[int(round(a)), int(round(b))])
+    markers = np.zeros((h, w), dtype=np.int32)
+    reach = np.zeros((h, w), dtype=bool)
+    for i, (rr, cc, rad) in enumerate(keep, start=1):
+        markers[rr, cc] = i
+        R = int(math.ceil(rad * BLOB_REACH))
+        r0, r1, c0, c1 = max(0, rr - R), min(h, rr + R + 1), max(0, cc - R), min(w, cc + R + 1)
+        yy, xx = np.ogrid[r0 - rr : r1 - rr, c0 - cc : c1 - cc]
+        reach[r0:r1, c0:c1] |= yy * yy + xx * xx <= (rad * BLOB_REACH) ** 2
+    smooth = ndi.gaussian_filter(resp, sigma=max(1.0, min_sigma / 2))
+    labels = watershed(-smooth, markers, mask=sunlit & reach) if keep else np.zeros((h, w), dtype=np.int32)
+    info = {
+        "marker_source": "dense canopy: Laplacian-of-Gaussian blobs on brightness, inter-crown shadow removed",
+        "shadow_brightness_threshold": round(shade_t, 5),
+        "sunlit_canopy_fraction": round(float(sunlit.sum()) / max(1, int(inside.sum())), 4),
+        "blob_min_radius_m": round(min_sigma * math.sqrt(2) * m_per_px, 3),
+        "blob_max_radius_m": round(max_sigma * math.sqrt(2) * m_per_px, 3),
+        "dense_min_crown_m": min_d,
+        "blob_threshold": BLOB_THRESHOLD,
+        "blob_reach_radii": BLOB_REACH,
+        "blobs_total": int(len(blobs)),
+        "markers": len(keep),
+        "_marker_coords": np.array([(a, b) for a, b, _ in keep], dtype=np.int64).reshape(-1, 2),
         "_response": resp,
     }
     return labels.astype(np.int32), separation_map(labels), info

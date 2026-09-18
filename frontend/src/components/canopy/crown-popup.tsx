@@ -25,17 +25,21 @@ function Row({ label, value, indent = false }: { label: string; value: React.Rea
 /** Numbers for people who want them, words for people who do not (spec 6.6). */
 export function CrownPopup({ crown, heightEnabled }: { crown: CrownProps; heightEnabled: boolean }) {
   const low = crown.confidence_bucket === "low";
+  const conf = crown.confidence ?? 0;
+  const area = crown.area_m2 ?? 0;
+  const diam = crown.equivalent_diameter_m ?? 0;
+  const signals = crown.signals ?? {} as CrownProps["signals"];
   return (
     <div className="flex w-[248px] flex-col gap-3 p-4">
       <div className="flex items-center justify-between gap-2">
-        <p className="text-body-medium text-text-primary">Crown #{crown.id}</p>
-        <Chip variant="caption" color={BUCKET_CHIP[crown.confidence_bucket]}>
-          {BUCKET_LABEL[crown.confidence_bucket]} ({crown.confidence.toFixed(2)})
+        <p className="text-body-medium text-text-primary">Crown #{crown.id ?? "?"}</p>
+        <Chip variant="caption" color={BUCKET_CHIP[crown.confidence_bucket] ?? "rose"}>
+          {BUCKET_LABEL[crown.confidence_bucket] ?? "—"} ({conf.toFixed(2)})
         </Chip>
       </div>
       <dl className="flex flex-col gap-1">
-        <Row label="Area" value={`${crown.area_m2.toFixed(1)} m²`} />
-        <Row label="Diameter" value={`${crown.equivalent_diameter_m.toFixed(1)} m`} />
+        <Row label="Area" value={`${area.toFixed(1)} m²`} />
+        <Row label="Diameter" value={`${diam.toFixed(1)} m`} />
         <Row
           label="Height"
           value={
@@ -54,12 +58,12 @@ export function CrownPopup({ crown, heightEnabled }: { crown: CrownProps; height
         <p className="text-body-2-regular text-text-primary">{crown.low_confidence_reason}</p>
       ) : (
         <dl className="flex flex-col gap-1">
-          <Row label="Confidence" value={`${BUCKET_LABEL[crown.confidence_bucket]} (${crown.confidence.toFixed(2)})`} />
-          {crown.signals.detector != null && <Row indent label="AI detector" value={crown.signals.detector.toFixed(2)} />}
-          <Row indent label="Shape" value={crown.signals.shape.toFixed(2)} />
-          <Row indent label="Size fit" value={crown.signals.size.toFixed(2)} />
-          <Row indent label="Separation" value={crown.signals.separation.toFixed(2)} />
-          <Row indent label="Shadow" value={heightEnabled ? crown.signals.shadow.toFixed(2) : "not used"} />
+          <Row label="Confidence" value={`${BUCKET_LABEL[crown.confidence_bucket] ?? "—"} (${conf.toFixed(2)})`} />
+          {signals.detector != null && <Row indent label="AI detector" value={signals.detector.toFixed(2)} />}
+          <Row indent label="Shape" value={signals.shape?.toFixed(2) ?? "—"} />
+          <Row indent label="Size fit" value={signals.size?.toFixed(2) ?? "—"} />
+          <Row indent label="Separation" value={signals.separation?.toFixed(2) ?? "—"} />
+          <Row indent label="Shadow" value={heightEnabled ? (signals.shadow?.toFixed(2) ?? "—") : "not used"} />
         </dl>
       )}
       {crown.touches_edge && (

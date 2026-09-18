@@ -26,6 +26,11 @@ export function Modal({
   const unmountTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const panelRef = useRef<HTMLDivElement>(null);
 
+  const onCloseRef = useRef(onClose);
+  useEffect(() => {
+    onCloseRef.current = onClose;
+  });
+
   useEffect(() => {
     if (isOpen) {
       if (unmountTimer.current) clearTimeout(unmountTimer.current);
@@ -43,12 +48,19 @@ export function Modal({
   useEffect(() => {
     if (!isOpen) return;
     const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === "Escape") onClose();
+      if (event.key === "Escape") onCloseRef.current();
     };
     document.addEventListener("keydown", onKeyDown);
-    panelRef.current?.focus();
     return () => document.removeEventListener("keydown", onKeyDown);
-  }, [isOpen, onClose]);
+  }, [isOpen]);
+
+  useEffect(() => {
+    if (isOpen && visible) {
+      if (panelRef.current && !panelRef.current.contains(document.activeElement)) {
+        panelRef.current.focus();
+      }
+    }
+  }, [isOpen, visible]);
 
   if (!mounted || typeof document === "undefined") return null;
 

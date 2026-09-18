@@ -65,6 +65,19 @@ def _fetch_one(z: int, x: int, y: int) -> np.ndarray:
     return np.asarray(img, dtype=np.uint8)
 
 
+PLACEHOLDER_GREY = 204  # Esri's flat "Map data not yet available" tile
+
+
+def placeholder_fraction(rgb: np.ndarray) -> float:
+    """Share of 256 px tiles that are Esri's grey no-data placeholder (it is served with HTTP 200)."""
+    a = rgb if rgb.dtype == np.uint8 else (np.clip(rgb, 0, 1) * 255)
+    ts = geo.TILE_SIZE
+    h, w = a.shape[:2]
+    blocks = [a[r : r + ts, c : c + ts] for r in range(0, h, ts) for c in range(0, w, ts)]
+    bad = sum(1 for b in blocks if b.size and abs(float(b.mean()) - PLACEHOLDER_GREY) < 6 and float(b.std()) < 12)
+    return bad / max(1, len(blocks))
+
+
 def scene_pixels(aoi: Polygon, zoom: int) -> int:
     """Pixels in the AOI bounding box at this zoom, before any processing."""
     minx, miny, maxx, maxy = aoi.bounds

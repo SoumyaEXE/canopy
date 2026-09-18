@@ -167,10 +167,10 @@ export function FileUpload({
 
     let value = 0;
     const tick = () => {
-      value = Math.min(100, value + 2 + Math.random() * 5);
+      value = Math.min(100, value + 12 + Math.random() * 10);
       setProgress(Math.round(value));
       if (value < 100) {
-        timers.current.push(setTimeout(tick, 90));
+        timers.current.push(setTimeout(tick, 40));
         return;
       }
 
@@ -180,10 +180,10 @@ export function FileUpload({
           onUploadComplete?.(nextFile);
           setPhase("idle");
           setFile(null);
-        }, 1600),
+        }, 450),
       );
     };
-    timers.current.push(setTimeout(tick, 250));
+    timers.current.push(setTimeout(tick, 60));
   };
 
   const busy = phase !== "idle";

@@ -1,4 +1,4 @@
-import type { ApiError, AssistantEvent, AssistantInfo, ChatTurn, JobParams, JobResult, JobStatus, Project, Run, UploadInspection, ValidationResult } from "@/types";
+import type { ApiError, AssistantEvent, AssistantInfo, ChatTurn, JobParams, ModelsInfo, JobResult, JobStatus, Project, Run, UploadInspection, ValidationResult } from "@/types";
 
 // VITE_API_BASE must point at the production API in Vercel builds. Empty means same origin (Vite dev proxy).
 export const API_BASE = (import.meta.env.VITE_API_BASE ?? "").replace(/\/$/, "");
@@ -51,6 +51,8 @@ const json = (method: string, body: unknown): RequestInit => ({
 });
 
 export const api = {
+  models: () => request<ModelsInfo>("/api/models"),
+
   // projects
   projects: () => request<{ projects: Project[] }>("/api/projects").then((r) => r.projects),
   project: (id: string) => request<Project>(`/api/projects/${id}`),

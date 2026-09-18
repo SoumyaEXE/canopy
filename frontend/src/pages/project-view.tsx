@@ -22,6 +22,7 @@ import { IconButton } from "@/components/base/buttons/icon-button";
 import { Dropdown, DropdownItem, DropdownPopover, DropdownTrigger } from "@/components/base/dropdown/dropdown";
 import { Tab, TabList, TabPanel, Tabs } from "@/components/base/tabs/tabs";
 import { AiPanel, AskAiButton } from "@/components/canopy/ai-panel";
+import { MapErrorBoundary } from "@/components/canopy/map-error-boundary";
 import { MapView, type LayerVisibility, type MapMode } from "@/components/canopy/map-view";
 import { ProgressOverlay } from "@/components/canopy/progress-overlay";
 import { Shell, TopBar, useMedia } from "@/components/canopy/shell";
@@ -44,6 +45,7 @@ type NavKey = ProjectTab | "projects" | "limitations";
 
 const DEFAULT_PARAMS: JobParams = {
   detector: "hybrid",
+  yolo_variant: "yolo11s-seg",
   min_crown_diameter_m: 3,
   veg_index: "exg",
   threshold_mode: "otsu",
@@ -326,25 +328,27 @@ export function ProjectView({
         )}
 
         <div className="relative min-h-[45%] flex-1 overflow-hidden rounded-2xl border border-separator-border bg-background-secondary-default">
-          <MapView
-            result={p.result}
-            crowns={p.crowns}
-            rejected={p.rejected}
-            layers={layers}
-            imageryOpacity={imageryOpacity}
-            mode={mapMode}
-            drawPoints={[]}
-            validationCorner={vCorner}
-            validationBbox={vBbox}
-            validationClicks={vClicks}
-            onMapClick={onMapClick}
-            focus={focus}
-            basemap={style.basemap}
-            colorBy={style.colorBy}
-            palette={style.palette}
-            fillOpacity={style.fillOpacity}
-            attributionPosition="bottom-right"
-          />
+          <MapErrorBoundary>
+            <MapView
+              result={p.result}
+              crowns={p.crowns}
+              rejected={p.rejected}
+              layers={layers}
+              imageryOpacity={imageryOpacity}
+              mode={mapMode}
+              drawPoints={[]}
+              validationCorner={vCorner}
+              validationBbox={vBbox}
+              validationClicks={vClicks}
+              onMapClick={onMapClick}
+              focus={focus}
+              basemap={style.basemap}
+              colorBy={style.colorBy}
+              palette={style.palette}
+              fillOpacity={style.fillOpacity}
+              attributionPosition="bottom-right"
+            />
+          </MapErrorBoundary>
           {p.loadingRun && (
             <div className="absolute inset-0 z-10 flex items-center justify-center bg-background-secondary-default/60 backdrop-blur-[2px]">
               <span className="flex items-center gap-2 rounded-full border border-separator-border bg-background-primary-default px-3 py-1.5 text-body-2-medium text-text-secondary shadow-dropdown">

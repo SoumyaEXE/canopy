@@ -83,6 +83,21 @@ def healthz():
     return {"ok": True, "version": config.APP_VERSION}
 
 
+@app.get("/api/models")
+def models():
+    """Which AI detector sizes have fine-tuned tree weights on this server."""
+    from .pipeline import detector
+
+    ok, why = detector.available()
+    trained = detector.trained_variants()
+    return {
+        "available": ok,
+        "reason": why,
+        "default": detector.DEFAULT_VARIANT,
+        "variants": [{"id": v, "label": label, "trained": v in trained} for v, label in detector.VARIANTS.items()],
+    }
+
+
 @app.get("/api/limitations")
 def limitations():
     return Response(LIMITATIONS_MD, media_type="text/markdown; charset=utf-8")
