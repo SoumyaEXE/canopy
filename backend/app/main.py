@@ -385,7 +385,7 @@ def create_run(project_id: str, body: RunCreate):
 def assistant_info(project_id: str):
     _project_or_404(project_id)
     ok, why = assistant.available()
-    return {"available": ok, "reason": why, "model": assistant.MODEL, "suggestions": assistant.suggestions(project_id)}
+    return {"available": ok, "reason": why, "model": assistant.model_label(), "suggestions": assistant.suggestions(project_id)}
 
 
 @app.post("/api/projects/{project_id}/assistant/chat")

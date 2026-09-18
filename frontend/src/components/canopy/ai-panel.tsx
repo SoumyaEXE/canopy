@@ -19,7 +19,8 @@ import type { AssistantInfo, ChatTurn, JobParams } from "@/types";
 import { cx } from "@/utils/cx";
 
 type Action = { params: Partial<JobParams>; reason: string; applied?: boolean };
-type Message = { id: string; role: "user" | "assistant"; text: string; actions?: Action[]; tools?: string[]; error?: string; pending?: boolean };
+type Source = { n: number; title: string; url: string };
+type Message = { id: string; role: "user" | "assistant"; text: string; actions?: Action[]; tools?: string[]; sources?: Source[]; error?: string; pending?: boolean };
 
 const PARAM_LABEL: Record<string, string> = {
   detector: "Detector",
@@ -245,6 +246,7 @@ export function AiPanel({
           if (e.type === "text") patchLast((m) => ({ ...m, text: m.text + e.text }));
           else if (e.type === "tool") patchLast((m) => ({ ...m, tools: [...(m.tools ?? []), e.label] }));
           else if (e.type === "action") patchLast((m) => ({ ...m, actions: [...(m.actions ?? []), { params: e.params, reason: e.reason }] }));
+          else if (e.type === "sources") patchLast((m) => ({ ...m, sources: e.sources }));
           else if (e.type === "error") patchLast((m) => ({ ...m, error: e.message }));
         },
         ctrl.signal,
@@ -384,6 +386,18 @@ export function AiPanel({
                               }}
                             />
                           ))}
+                          {m.sources && m.sources.length > 0 && (
+                            <ol className="mt-3 flex flex-col gap-1 border-t border-separator-border pt-2">
+                              {m.sources.map((s) => (
+                                <li key={s.n} className="flex min-w-0 gap-1.5 text-caption-1-regular">
+                                  <span className="shrink-0 text-text-tertiary tabular-nums">[{s.n}]</span>
+                                  <a href={s.url} target="_blank" rel="noreferrer noopener" className="truncate text-text-secondary underline decoration-separator-border underline-offset-2 hover:text-text-primary">
+                                    {s.title}
+                                  </a>
+                                </li>
+                              ))}
+                            </ol>
+                          )}
                           {m.error && <p className="mt-2 rounded-lg bg-background-tertiary-error px-3 py-2 text-body-2-regular text-text-primary">{m.error}</p>}
                         </div>
                       </motion.div>

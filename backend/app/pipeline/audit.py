@@ -110,14 +110,30 @@ def write_csv(path: Path, crowns: list[dict]) -> None:
     path.write_text(buf.getvalue(), encoding="utf-8")
 
 
+# Images for the map and Pipeline tab are strided down to at most this many pixels on the long side, so a
+# large area still renders in a browser (WebGL textures) and stays small on disk. The audit mask stays full size.
+DISPLAY_MAX_PX = 6000
+
+
+def display_step(shape: tuple[int, int]) -> int:
+    return max(1, int(np.ceil(max(shape) / DISPLAY_MAX_PX)))
+
+
+def _save(img: Image.Image, path: Path) -> None:
+    # PNG optimisation is slow on very large images and gains little there.
+    img.save(path, optimize=img.width * img.height <= 4_000_000)
+
+
 def write_images(job_dir: Path, rgb: np.ndarray, canopy: np.ndarray, aoi: np.ndarray, labels: np.ndarray, crowns: list[dict]) -> None:
+    _save(Image.fromarray((canopy.astype(np.uint8) * 255)), job_dir / "canopy_mask.png")
+    k = display_step(canopy.shape)
+    rgb, canopy, aoi, labels = rgb[::k, ::k], canopy[::k, ::k], aoi[::k, ::k], labels[::k, ::k]
     img8 = (np.clip(rgb, 0, 1) * 255).round().astype(np.uint8)
-    Image.fromarray(img8).save(job_dir / "imagery.png", optimize=True)
-    Image.fromarray((canopy.astype(np.uint8) * 255)).save(job_dir / "canopy_mask.png", optimize=True)
+    _save(Image.fromarray(img8), job_dir / "imagery.png")
 
     layer = np.zeros((*canopy.shape, 4), dtype=np.uint8)
     layer[canopy] = (*EMERALD, 255)
-    Image.fromarray(layer, "RGBA").save(job_dir / "canopy_layer.png", optimize=True)
+    _save(Image.fromarray(layer, "RGBA"), job_dir / "canopy_layer.png")
 
     overlay = img8.copy()
     bucket_of = np.zeros(int(labels.max()) + 1, dtype=np.uint8)
@@ -129,7 +145,7 @@ def write_images(job_dir: Path, rgb: np.ndarray, canopy: np.ndarray, aoi: np.nda
         overlay[bounds & (kept == code)] = BUCKET_RGB[name]
     aoi_edge = find_boundaries(aoi, mode="inner")
     overlay[aoi_edge] = (255, 255, 255)
-    Image.fromarray(overlay).save(job_dir / "overlay.png", optimize=True)
+    _save(Image.fromarray(overlay), job_dir / "overlay.png")
 
 
 def summary_text(result: dict) -> str:
@@ -203,12 +219,20 @@ REJECT_RGB = (148, 163, 184)
 BOX_RGB = (250, 204, 21)
 
 
-def _ramp(v: np.ndarray) -> np.ndarray:
-    """Map [0, 1] to a 5-stop viridis approximation, NumPy only."""
-    v = np.clip(np.nan_to_num(v, nan=0.0), 0.0, 1.0) * (len(_VIRIDIS) - 1)
+def _viridis_lut() -> np.ndarray:
+    v = np.linspace(0.0, 1.0, 256) * (len(_VIRIDIS) - 1)
     i = np.minimum(v.astype(np.int64), len(_VIRIDIS) - 2)
-    f = (v - i)[..., None]
+    f = (v - i)[:, None]
     return (_VIRIDIS[i] * (1 - f) + _VIRIDIS[i + 1] * f).round().astype(np.uint8)
+
+
+_LUT = _viridis_lut()
+
+
+def _ramp(v: np.ndarray) -> np.ndarray:
+    """Map [0, 1] to a 5-stop viridis approximation through a 256-entry lookup table (1 byte per pixel of temp)."""
+    q = (np.clip(np.nan_to_num(v, nan=0.0), 0.0, 1.0) * 255).astype(np.uint8)
+    return _LUT[q]
 
 
 def _stretch(a: np.ndarray, where: np.ndarray) -> np.ndarray:
@@ -267,12 +291,18 @@ def write_stage_images(
     rejected: list[dict],
 ) -> list[str]:
     """Write stage_*.png and return the file names written, in pipeline order."""
+    k = display_step(canopy.shape)
+    if k > 1:
+        index, raw, canopy, aoi, labels = index[::k, ::k], raw[::k, ::k], canopy[::k, ::k], aoi[::k, ::k], labels[::k, ::k]
+        response = response[::k, ::k] if response is not None else None
+        markers = markers // k if markers is not None else None
+        boxes = np.column_stack([boxes[:, :4] / k, boxes[:, 4]]) if boxes is not None else None
     h, w = canopy.shape
     written: list[str] = []
     dot = max(1, round(min(h, w) / 250))
 
     def save(name: str, arr: np.ndarray) -> None:
-        Image.fromarray(arr, "RGBA").save(job_dir / name, optimize=True)
+        _save(Image.fromarray(arr, "RGBA"), job_dir / name)
         written.append(name)
 
     alpha_aoi = np.where(aoi, 255, 60).astype(np.uint8)

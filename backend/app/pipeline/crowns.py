@@ -177,22 +177,56 @@ BLOB_OVERLAP = 0.3
 BLOB_REACH = 1.4
 
 
+# blob_log builds a (scales x H x W) stack, so large scenes are searched in overlapping windows. Scenes up to one
+# window are searched in one pass, exactly as before.
+BLOB_WINDOW = 2048
+
+
 def blob_response(index: np.ndarray, rgb: np.ndarray, threshold: float) -> np.ndarray:
-    img = np.clip(index - threshold, 0.0, None) * (0.5 + rgb.mean(axis=-1))
+    img = np.clip(index - threshold, 0.0, None).astype(np.float32)
+    img *= (0.5 + rgb.mean(axis=-1, dtype=np.float32))
     lo, span = float(img.min()), float(np.ptp(img))
-    return ((img - lo) / span if span > 0 else np.zeros_like(img)).astype(np.float64)
+    if span <= 0:
+        return np.zeros_like(img)
+    img -= lo
+    img /= span
+    return img
+
+
+def _blob_log_windowed(resp: np.ndarray, min_sigma: float, max_sigma: float) -> np.ndarray:
+    from skimage.feature import blob_log
+
+    kw = dict(min_sigma=min_sigma, max_sigma=max_sigma, num_sigma=BLOB_NUM_SIGMA, threshold=BLOB_THRESHOLD,
+              overlap=BLOB_OVERLAP, exclude_border=False)
+    h, w = resp.shape
+    if h <= BLOB_WINDOW and w <= BLOB_WINDOW:
+        return blob_log(resp, **kw)
+    pad = int(np.ceil(4 * max_sigma)) + 2
+    found = []
+    for r0 in range(0, h, BLOB_WINDOW):
+        for c0 in range(0, w, BLOB_WINDOW):
+            r1, c1 = min(h, r0 + BLOB_WINDOW), min(w, c0 + BLOB_WINDOW)
+            pr0, pc0 = max(0, r0 - pad), max(0, c0 - pad)
+            sub = resp[pr0 : min(h, r1 + pad), pc0 : min(w, c1 + pad)]
+            if not sub.any():
+                continue
+            b = blob_log(sub, **kw)
+            if len(b):
+                b[:, 0] += pr0
+                b[:, 1] += pc0
+                # Keep only blobs centred in this window's core, so overlaps never double-count.
+                core = (b[:, 0] >= r0) & (b[:, 0] < r1) & (b[:, 1] >= c0) & (b[:, 1] < c1)
+                found.append(b[core])
+    return np.concatenate(found) if found else np.zeros((0, 3))
 
 
 def segment_blobs(
     index: np.ndarray, rgb: np.ndarray, threshold: float, canopy: np.ndarray, m_per_px: float, min_crown_diameter_m: float
 ) -> tuple[np.ndarray, np.ndarray, dict]:
-    from skimage.feature import blob_log
-
     resp = blob_response(index, rgb, threshold)
     min_sigma = max(0.7, (min_crown_diameter_m / 2.0) / m_per_px / math.sqrt(2))
     max_sigma = max(min_sigma + 0.5, BLOB_MAX_RADIUS_M / m_per_px / math.sqrt(2))
-    blobs = blob_log(resp, min_sigma=min_sigma, max_sigma=max_sigma, num_sigma=BLOB_NUM_SIGMA,
-                     threshold=BLOB_THRESHOLD, overlap=BLOB_OVERLAP, exclude_border=False)
+    blobs = _blob_log_windowed(resp, min_sigma, max_sigma)
     h, w = canopy.shape
     keep = []
     for r, c, s in blobs:
@@ -235,4 +269,4 @@ def separation_map(labels: np.ndarray) -> np.ndarray:
     edges[1:, :] |= dv
     edges[:, :-1] |= dh
     edges[:, 1:] |= dh
-    return ndi.distance_transform_edt((labels > 0) & ~edges).astype(np.float64)
+    return ndi.distance_transform_edt((labels > 0) & ~edges).astype(np.float32)

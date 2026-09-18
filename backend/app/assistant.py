@@ -17,6 +17,7 @@ from __future__ import annotations
 import json
 import math
 import os
+import re
 from pathlib import Path
 from typing import Iterator
 
@@ -26,6 +27,9 @@ from .pipeline import LIMITATIONS_MD, geo, ingest
 from .projects import store as projects
 
 MODEL = "claude-opus-5"
+YDC_URL = "https://api.you.com/v1/research"
+YDC_EFFORT = "lite"  # $12 per 1,000 questions, answers in under 10 s
+YDC_MAX_INPUT = 40_000  # the Research API input limit, in characters
 MAX_TOOL_TURNS = 4
 MAX_HISTORY_MESSAGES = 40
 METHOD_MD = Path(__file__).resolve().parents[2] / "docs" / "METHOD.md"
@@ -111,17 +115,37 @@ class AssistantError(Exception):
 ENV_FILE = Path(__file__).resolve().parents[1] / ".env"
 
 
-def api_key() -> str | None:
-    """backend/.env wins over the shell, so a stray ANTHROPIC_API_KEY from another tool cannot shadow it."""
+def _env(name: str) -> str | None:
+    """backend/.env wins over the shell, so a stray variable from another tool cannot shadow it."""
     if ENV_FILE.exists():
         for line in ENV_FILE.read_text(encoding="utf-8").splitlines():
             k, _, v = line.partition("=")
-            if k.strip() == "ANTHROPIC_API_KEY" and v.strip():
+            if k.strip() == name and v.strip():
                 return v.strip().strip('"').strip("'")
-    return os.environ.get("ANTHROPIC_API_KEY") or None
+    return os.environ.get(name) or None
+
+
+def api_key() -> str | None:
+    return _env("ANTHROPIC_API_KEY")
+
+
+def provider() -> str:
+    """youcom (You.com Research API, lite tier) or anthropic. Defaults to whichever key is configured."""
+    chosen = (_env("CANOPY_AI_PROVIDER") or "").lower()
+    if chosen in ("youcom", "anthropic"):
+        return chosen
+    return "youcom" if _env("YDC_API_KEY") else "anthropic"
+
+
+def model_label() -> str:
+    return f"You.com Research ({YDC_EFFORT})" if provider() == "youcom" else MODEL
 
 
 def available() -> tuple[bool, str | None]:
+    if provider() == "youcom":
+        if not _env("YDC_API_KEY"):
+            return False, "No You.com API key on the server. Put YDC_API_KEY=ydc-sk-... in backend/.env and restart the API."
+        return True, None
     try:
         import anthropic  # noqa: F401
     except ImportError:
@@ -321,6 +345,9 @@ def _clean_history(messages: list[dict]) -> list[dict]:
 
 
 def stream_chat(project_id: str, run_id: str | None, messages: list[dict]) -> Iterator[str]:
+    if provider() == "youcom":
+        yield from _youcom_chat(project_id, run_id, messages)
+        return
     import anthropic
 
     history = _clean_history(messages)
@@ -410,3 +437,131 @@ def suggestions(project_id: str) -> list[str]:
     if len(project.get("runs", [])) > 1:
         out.append("What changed between my runs?")
     return out[:5]
+
+
+# ---- You.com Research API ------------------------------------------------------------------------------
+# One request per question: the Research API takes a single text input (up to 40,000 characters) and returns
+# a cited Markdown answer. It has no tool calling, so the crown lists find_crowns would return are put in the
+# input up front, and a re-run suggestion comes back as a tagged line that is turned into an action card.
+
+YDC_INSTRUCTIONS = """You are Canopy AI inside one CANOPY workspace. CANOPY finds tree crowns in aerial or satellite \
+imagery and measures canopy cover. Answer the QUESTION at the end about THIS workspace, using the WORKSPACE DATA \
+below as the primary source of truth. Web sources may only add general background (for example what a method \
+is); never let them override the workspace numbers.
+
+Rules:
+- Ground every number in the workspace data and say where it comes from (for example "run #3").
+- If the data does not contain something, say so. Never invent counts, areas, heights, dates or species.
+- You cannot see the imagery. For questions that need it, point to the Map, Pipeline or Validation tab.
+- CANOPY does not estimate carbon, biomass or credits; explain why if asked.
+- Keep it short: a direct answer first, then at most five bullets. Use **bold** for the key number.
+- If you recommend re-running with different parameters, end your answer with exactly one line of this form:
+  RERUN: {"reason": "<one sentence>", "<parameter>": <value>}
+  Allowed parameters: detector ("hybrid" or "classical"), min_crown_diameter_m (1 to 20), veg_index ("exg", \
+"vari", "ndvi"), threshold_mode ("otsu" or "manual"), threshold_manual (-1 to 1), tile_zoom (18 or 19), \
+enable_height (true or false). Include only the parameters you would change."""
+
+_RERUN = re.compile(r"^\s*RERUN:\s*(\{.*\})\s*$", re.MULTILINE)
+_CITE = re.compile(r"\s?\[\[([\d,\s]+)\]\]")
+
+
+def _crown_lists(run_dir: Path | None) -> str:
+    if run_dir is None:
+        return ""
+    parts = []
+    for title, args in (
+        ("LOWEST-CONFIDENCE CROWNS", {"sort_by": "confidence_asc", "limit": 10}),
+        ("LARGEST CROWNS", {"sort_by": "area_desc", "limit": 10}),
+        ("CROWNS TOUCHING THE BOUNDARY", {"touches_edge": True, "sort_by": "area_desc", "limit": 5}),
+    ):
+        parts.append(f"{title}:\n{_find_crowns(run_dir, args)}")
+    return "\n\n".join(parts)
+
+
+def _youcom_input(context: str, run_dir: Path | None, history: list[dict]) -> str:
+    convo = "\n".join(f"{'USER' if m['role'] == 'user' else 'CANOPY AI'}: {m['content'][:1500]}" for m in history[:-1][-8:])
+    question = history[-1]["content"][:2000]
+    head = YDC_INSTRUCTIONS + "\n\nWORKSPACE DATA:\n"
+    tail = ("\n\nEARLIER CONVERSATION:\n" + convo if convo else "") + "\n\nQUESTION: " + question
+    ws_end = context.find("</workspace_context>") + len("</workspace_context>")
+    workspace, docs = context[:ws_end], context[ws_end:]
+    crowns = "\n\n" + _crown_lists(run_dir)
+    room = YDC_MAX_INPUT - len(head) - len(tail) - 100
+    # The method and limitations documents give way first; the workspace data and crown lists are kept whole.
+    keep = max(0, room - len(workspace) - len(crowns))
+    if keep < len(docs):
+        docs = docs[:keep] + "\n[documents shortened]\n"
+    return (head + workspace + docs + crowns)[: YDC_MAX_INPUT - len(tail)] + tail
+
+
+def _youcom_chat(project_id: str, run_id: str | None, messages: list[dict]) -> Iterator[str]:
+    import requests
+
+    history = _clean_history(messages)
+    context, run_dir = build_context(project_id, run_id)
+    body = {"input": _youcom_input(context, run_dir, history), "research_effort": YDC_EFFORT}
+    yield _sse({"type": "tool", "name": "research", "label": "Reading the workspace and checking sources"})
+    try:
+        r = requests.post(YDC_URL, headers={"X-API-Key": _env("YDC_API_KEY") or ""}, json=body, timeout=90)
+    except requests.Timeout:
+        yield _sse({"type": "error", "message": "You.com took too long to answer. Try again, or ask a narrower question."})
+        return
+    except requests.RequestException:
+        yield _sse({"type": "error", "message": "The server could not reach You.com. Check its internet connection."})
+        return
+    if r.status_code in (401, 403):
+        yield _sse({"type": "error", "message": "You.com rejected the API key. Check YDC_API_KEY in backend/.env."})
+        return
+    if r.status_code == 402:
+        yield _sse({"type": "error", "message": "The You.com account is out of credits."})
+        return
+    if r.status_code == 429:
+        yield _sse({"type": "error", "message": "You.com is rate limiting requests. Try again in a few seconds."})
+        return
+    if r.status_code >= 400:
+        yield _sse({"type": "error", "message": f"You.com could not answer ({r.status_code}). Try rephrasing the question."})
+        return
+    try:
+        output = r.json()["output"]
+        content = output["content"] if isinstance(output["content"], str) else json.dumps(output["content"])
+        sources = output.get("sources") or []
+    except (ValueError, KeyError, TypeError):
+        yield _sse({"type": "error", "message": "You.com returned an answer CANOPY could not read. Try again."})
+        return
+
+    actions = []
+    for m in _RERUN.finditer(content):
+        try:
+            args = json.loads(m.group(1))
+        except ValueError:
+            continue
+        if _valid("propose_rerun", args):
+            params = {k: args[k] for k in PARAM_KEYS if k in args}
+            if "threshold_manual" in params:
+                params["threshold_mode"] = "manual"
+            actions.append({"type": "action", "params": params, "reason": str(args["reason"])})
+    content = _RERUN.sub("", content).strip()
+
+    # Keep only the web sources the answer cites, renumbered as plain [n] markers.
+    cited: list[int] = []
+    for m in _CITE.finditer(content):
+        for n in (int(x) for x in m.group(1).split(",") if x.strip().isdigit()):
+            if 1 <= n <= len(sources) and n not in cited:
+                cited.append(n)
+    renum = {n: i + 1 for i, n in enumerate(cited)}
+    content = _CITE.sub(
+        lambda m: "".join(f" [{renum[int(x)]}]" for x in m.group(1).split(",") if x.strip().isdigit() and int(x) in renum),
+        content,
+    )
+
+    # The Research API answers in one piece; small chunks let the panel type it out.
+    for i in range(0, len(content), 24):
+        yield _sse({"type": "text", "text": content[i : i + 24]})
+    for a in actions[:1]:
+        yield _sse(a)
+    if cited:
+        yield _sse({"type": "sources", "sources": [
+            {"n": renum[n], "title": sources[n - 1].get("title") or sources[n - 1]["url"], "url": sources[n - 1]["url"]}
+            for n in cited
+        ]})
+    yield _sse({"type": "done"})

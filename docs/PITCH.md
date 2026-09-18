@@ -56,11 +56,11 @@ Plain DeepForest gives 55 trees on the original image, about the same as us, but
 - **"Why did the sample go from 532 to 1,107 crowns?"** The new detector finds small crowns the old one merged, and it also splits some big oaks. That scene has no labels, so we use the Validation tab to measure it rather than guess.
 - **"Why is 1 m weak?"** At 1 m a 3 m crown is 3 pixels. We warn about it and keep canopy cover, which is still reliable.
 - **"Carbon?"** No. Crown area isn't biomass, and the Limitations page explains why.
-- **"Is the AI making things up?"** It only sees this workspace's data, is told to cite it, can't run anything without your click, and can't see pixels. It says so when a question needs them.
+- **"Is the AI making things up?"** It answers from this workspace's data first. Any web facts come with numbered source links, it can't run anything without your click, and it can't see pixels.
 
 ## Before the demo (checklist)
 
-- [ ] `backend/.env` holds `ANTHROPIC_API_KEY=sk-ant-...`. The key currently in the shell is not an Anthropic key.
+- [ ] `backend/.env` holds `CANOPY_AI_PROVIDER=youcom` and `YDC_API_KEY=...` (already set). Each question costs about 1.2¢, using You.com Research at the lite tier.
 - [ ] Start the backend (`uvicorn app.main:app --port 8000`) and the frontend (`npm run dev`), then open http://localhost:5173.
 - [ ] Run the OSBS project once, so the AI model (about 230 MB) is downloaded and warm.
 - [ ] Check internet access, needed for Esri imagery and Canopy AI.

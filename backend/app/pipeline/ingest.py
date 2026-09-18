@@ -102,9 +102,8 @@ def validate_aoi(poly: Polygon | MultiPolygon) -> float:
     if km2 > config.MAX_AOI_KM2:
         raise PipelineError(
             "aoi_too_large",
-            f"Your area is {km2:.2f} square kilometres. The maximum is {config.MAX_AOI_KM2:.1f}. "
-            "Areas over 1 km² can exceed the processing timeout on the free demo instance. "
-            "Please draw a smaller area, or run the tool locally for larger areas (see the README).",
+            f"Your area is {km2:.2f} square kilometres; the limit on this server is {config.MAX_AOI_KM2:.0f} km². "
+            "Split it into several projects, or raise CANOPY_MAX_AOI_KM2 on a machine with more memory.",
         )
     if area_m2 < 100:
         raise PipelineError("aoi_too_small", f"Your area is only {area_m2:.0f} m². Please draw an area of at least 100 m².")
@@ -119,7 +118,7 @@ def tiles_needed(geom, zoom: int = 18) -> int:
     return (x1 - x0 + 1) * (y1 - y0 + 1)
 
 
-def validate_extent(geom, zoom: int = 18) -> None:
+def validate_extent(geom, zoom: int = config.MIN_AUTO_ZOOM) -> None:
     n = tiles_needed(geom, zoom)
     if n > config.MAX_TILES:
         minx, miny, maxx, maxy = geom.bounds
@@ -378,6 +377,14 @@ def load_geotiff(parsed: ParsedInput, aoi_lonlat: Polygon | MultiPolygon | None)
                 transform, width, height = calculate_default_transform(src.crs, dst_crs, src.width, src.height, *src.bounds)
                 reprojected = True
 
+            # Rasters over the pixel budget are averaged down by a whole factor so memory stays bounded.
+            decimate = 1
+            if width * height > config.MAX_SCENE_PX:
+                decimate = int(np.ceil(np.sqrt(width * height / config.MAX_SCENE_PX)))
+                transform = transform * rasterio.Affine.scale(decimate)
+                width, height = int(np.ceil(width / decimate)), int(np.ceil(height / decimate))
+                reprojected = True  # resampled onto a new grid, so it goes through reproject()
+
             nodata = src.nodata
             wanted = [bands["r"], bands["g"], bands["b"]] + ([bands["nir"]] if bands["nir"] else [])
             out = np.zeros((len(wanted), height, width), dtype=src.dtypes[0])
@@ -391,7 +398,7 @@ def load_geotiff(parsed: ParsedInput, aoi_lonlat: Polygon | MultiPolygon | None)
                         src_crs=src.crs,
                         dst_transform=transform,
                         dst_crs=dst_crs,
-                        resampling=Resampling.nearest,
+                        resampling=Resampling.average if decimate > 1 else Resampling.nearest,
                         src_nodata=nodata,
                         dst_nodata=0,
                     )
@@ -425,7 +432,8 @@ def load_geotiff(parsed: ParsedInput, aoi_lonlat: Polygon | MultiPolygon | None)
                 "source_crs": src.crs.to_string(),
                 "working_crs": dst_crs.to_string(),
                 "reprojected": reprojected,
-                "reprojection_resampling": "nearest" if reprojected else None,
+                "reprojection_resampling": ("average" if decimate > 1 else "nearest") if reprojected else None,
+                "decimation_factor": decimate,
                 "band_normalization_divisors": [round(float(s), 4) for s in scales],
                 "aoi_note": aoi_note,
                 "resolution_source": "affine transform pixel size" + (" after reprojection to UTM" if reprojected else ""),

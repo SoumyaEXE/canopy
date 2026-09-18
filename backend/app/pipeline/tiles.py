@@ -65,6 +65,33 @@ def _fetch_one(z: int, x: int, y: int) -> np.ndarray:
     return np.asarray(img, dtype=np.uint8)
 
 
+def scene_pixels(aoi: Polygon, zoom: int) -> int:
+    """Pixels in the AOI bounding box at this zoom, before any processing."""
+    minx, miny, maxx, maxy = aoi.bounds
+    mx0, my1 = geo.lonlat_to_mercator(minx, maxy)
+    mx1, my0 = geo.lonlat_to_mercator(maxx, miny)
+    res = geo.mercator_nominal_px(zoom)
+    return int(((mx1 - mx0) / res + 1) * ((my1 - my0) / res + 1))
+
+
+def tile_count(aoi: Polygon, zoom: int) -> int:
+    x0, y0, x1, y1 = tile_range(aoi, zoom)
+    return (x1 - x0 + 1) * (y1 - y0 + 1)
+
+
+def choose_zoom(aoi: Polygon, requested: int) -> int:
+    """The finest zoom, at most the requested one, whose scene fits the pixel and tile budgets."""
+    for z in range(requested, config.MIN_AUTO_ZOOM - 1, -1):
+        if scene_pixels(aoi, z) <= config.MAX_SCENE_PX and tile_count(aoi, z) <= config.MAX_TILES:
+            return z
+    raise PipelineError(
+        "aoi_too_large",
+        f"This area needs {scene_pixels(aoi, config.MIN_AUTO_ZOOM) / 1e6:.0f} million pixels even at zoom "
+        f"{config.MIN_AUTO_ZOOM}, over this server's budget of {config.MAX_SCENE_PX / 1e6:.0f} million. "
+        "Split it into several projects, or raise CANOPY_MAX_SCENE_PX on a machine with more memory.",
+    )
+
+
 def fetch_scene(aoi: Polygon, zoom: int) -> Scene:
     x0, y0, x1, y1 = tile_range(aoi, zoom)
     nx, ny = x1 - x0 + 1, y1 - y0 + 1

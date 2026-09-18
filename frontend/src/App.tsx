@@ -255,7 +255,7 @@ function DrawPage({
   };
 
   return (
-    <Shell groups={groups} selected={null} onSelect={onSelect} wide header={<TopBar eyebrow="New project" title="Draw an area of interest" meta={<span>Search a place, then click the corners of the area. Maximum 1 km².</span>} />}>
+    <Shell groups={groups} selected={null} onSelect={onSelect} wide header={<TopBar eyebrow="New project" title="Draw an area of interest" meta={<span>Search a place, then click the corners of the area. Large areas are fine; above about 12 km² imagery is fetched at a coarser zoom.</span>} />}>
       <div className="absolute inset-0 p-3">
         <div className="relative size-full overflow-hidden rounded-2xl border border-separator-border">
           <MapView
@@ -292,9 +292,9 @@ function DrawPage({
                 <p className="text-caption-1-regular text-text-tertiary">{area < 0.01 ? "ha" : "km²"} · {points.length} points</p>
               </div>
             </div>
-            {area > 1 && (
-              <p className="text-body-2-regular text-text-error-primary">
-                Areas over 1 km² can exceed the processing timeout on the free demo instance. For larger areas, run the tool locally.
+            {area > 12 && (
+              <p className="text-body-2-regular text-text-tertiary">
+                Large area: imagery will be fetched at a coarser zoom to stay within memory. Canopy cover stays reliable; small crowns may be missed.
               </p>
             )}
             <div className="flex gap-2">

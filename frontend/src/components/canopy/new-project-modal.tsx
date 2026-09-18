@@ -113,7 +113,7 @@ export function NewProjectModal({
             />
             <p className="text-caption-1-regular text-text-tertiary">
               GeoTIFFs must carry a coordinate reference system and are analysed at their own resolution (RGB, RGBA or RGB + NIR). Boundary files
-              must hold one polygon up to 1 km²; imagery is fetched for it. The first run starts as soon as the file is checked.
+              can cover large areas (up to 100 km²); imagery is fetched for them, at a coarser zoom above about 12 km². The first run starts as soon as the file is checked.
             </p>
           </div>
         )}

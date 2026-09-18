@@ -93,7 +93,16 @@ def run_pipeline(
         progress("acquiring_imagery", "Reading GeoTIFF and grounding pixel size")
         scene = ingest.load_geotiff(parsed, parsed.aoi_lonlat)
     else:
-        progress("acquiring_imagery", f"Fetching {config.TILE_SOURCE_NAME} tiles at zoom {zoom}")
+        requested_zoom = zoom
+        zoom = tiles.choose_zoom(parsed.aoi_lonlat, zoom)
+        if zoom < requested_zoom:
+            warnings.append(
+                f"This area is large, so imagery was fetched at zoom {zoom} instead of {requested_zoom} to stay within "
+                f"memory (about {geo.mercator_m_per_px(parsed.aoi_lonlat.centroid.y, zoom):.1f} m per pixel). "
+                "Canopy cover is reliable; small crowns may be missed. Split the area into projects for full detail."
+            )
+        n_tiles = tiles.tile_count(parsed.aoi_lonlat, zoom)
+        progress("acquiring_imagery", f"Fetching {n_tiles} {config.TILE_SOURCE_NAME} tiles at zoom {zoom}")
         scene = tiles.fetch_scene(parsed.aoi_lonlat, zoom)
         if zoom >= 19:
             warnings.append("Zoom 19 imagery is interpolated in many regions and may not add real detail over zoom 18.")
@@ -105,6 +114,11 @@ def run_pipeline(
             )
     m = scene.m_per_px
     h, w = scene.rgb.shape[:2]
+    if scene.audit.get("decimation_factor", 1) > 1:
+        warnings.append(
+            f"This GeoTIFF was larger than the {config.MAX_SCENE_PX / 1e6:.0f}-million-pixel budget, so it was averaged "
+            f"down {scene.audit['decimation_factor']}x to {m:.2f} m per pixel."
+        )
     if m > 1.0:
         warnings.append(
             f"This imagery is {m:.1f} m per pixel. Individual crowns under about {3 * m:.0f} m across cannot be resolved, "

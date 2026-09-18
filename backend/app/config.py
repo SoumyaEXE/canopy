@@ -20,8 +20,13 @@ CORS_ORIGINS = [
 ]
 
 MAX_UPLOAD_BYTES = 100 * 1024 * 1024
-MAX_AOI_KM2 = 1.0
-MAX_TILES = 64
+# Large areas: no area is refused below MAX_AOI_KM2. Up to MAX_SCENE_PX pixels an area runs at the requested
+# zoom; beyond that the tile zoom steps down (to at most MIN_AUTO_ZOOM) so memory stays bounded on a laptop.
+# All three can be raised through the environment on a bigger machine.
+MAX_AOI_KM2 = float(os.environ.get("CANOPY_MAX_AOI_KM2", "100"))
+MAX_TILES = int(os.environ.get("CANOPY_MAX_TILES", "4000"))
+MAX_SCENE_PX = int(os.environ.get("CANOPY_MAX_SCENE_PX", "60000000"))
+MIN_AUTO_ZOOM = 16
 JOB_WORKERS = 2
 TILE_FETCH_WORKERS = 6
 TILE_TIMEOUT_S = 10

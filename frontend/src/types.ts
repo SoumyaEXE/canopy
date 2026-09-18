@@ -242,5 +242,6 @@ export type AssistantEvent =
   | { type: "text"; text: string }
   | { type: "tool"; name: string; label: string }
   | { type: "action"; params: Partial<JobParams>; reason: string }
+  | { type: "sources"; sources: { n: number; title: string; url: string }[] }
   | { type: "error"; message: string }
   | { type: "done" };
