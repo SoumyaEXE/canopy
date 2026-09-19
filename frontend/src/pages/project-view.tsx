@@ -44,7 +44,7 @@ type LngLat = [number, number];
 type NavKey = ProjectTab | "projects" | "limitations";
 
 const DEFAULT_PARAMS: JobParams = {
-  detector: "hybrid",
+  detector: "classical",
   yolo_variant: "yolo11s-seg",
   min_crown_diameter_m: 3,
   veg_index: "exg",

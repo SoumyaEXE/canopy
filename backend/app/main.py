@@ -309,6 +309,8 @@ async def create_project(request: Request):
                 return _err(400, "bad_selection", "The selected areas could not be read. Please choose them again.")
             parsed = ingest.parse_upload(upload.filename or "upload", raw, selection)
             name = name or Path(upload.filename or "Untitled").stem
+            if parsed.kind in ("kml", "kmz", "geojson") and "detector" not in (json.loads(form.get("params") or "{}")):
+                params.detector = "classical"
             start = True
         else:
             body = ProjectCreate(**(await request.json()))
