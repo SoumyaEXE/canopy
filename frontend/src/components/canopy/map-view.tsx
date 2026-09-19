@@ -321,9 +321,9 @@ export function MapView(props: MapViewProps) {
         source: "centroids",
         paint: {
           "circle-color": styleRef.current.colorExpr,
-          "circle-radius": ["interpolate", ["exponential", 1.6], ["zoom"], 12, 1, 16, 2.5, 20, 7],
-          "circle-stroke-color": "#0a0a0a",
-          "circle-stroke-width": ["interpolate", ["linear"], ["zoom"], 14, 0, 17, 0.75],
+          "circle-radius": ["interpolate", ["exponential", 1.6], ["zoom"], 12, 2, 16, 4, 20, 8],
+          "circle-stroke-color": "#ffffff",
+          "circle-stroke-width": ["interpolate", ["linear"], ["zoom"], 12, 0.5, 17, 1.5],
         },
       },
       OVERLAY_FIRST,

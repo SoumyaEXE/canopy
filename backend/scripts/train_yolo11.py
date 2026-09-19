@@ -178,6 +178,7 @@ def train_yolo_models(
             pass
 
     models_to_train = [
+        ("yolo11m-seg.pt", "yolo11m-seg-odisha.pt"),
         ("yolo11s-seg.pt", "yolo11s-seg-odisha.pt"),
         ("yolo11n-seg.pt", "yolo11n-seg-odisha.pt"),
     ]

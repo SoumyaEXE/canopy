@@ -41,7 +41,7 @@ PATCH_OVERLAP = 0.25
 PATCH_IOU = 0.5  # NMS inside one patch (dense canopy: neighbouring crowns overlap a little)
 IOU_NMS = 0.3  # NMS across patch seams
 MAX_DET = 3000
-DEFAULT_SCORE_THRESHOLD = 0.25
+DEFAULT_SCORE_THRESHOLD = 0.15
 MIN_MASK_FILL = 0.35
 TRIM_TOLERANCE_M = 0.5
 MIN_CROWN_DIAMETER_M = 1.0
@@ -189,6 +189,32 @@ def detect(
                         r1, c1 = min(ph, int(math.ceil(y1)) + 1), min(pw, int(math.ceil(x1)) + 1)
                         crop = (r0 + ty, c0 + tx, m[r0:r1, c0:c1])
                     masks.append(crop)
+
+        # Adaptive fallback: if 0 boxes were found at initial threshold, retry with conf=0.10
+        if not boxes and score_threshold > 0.10:
+            for ty in _starts(wh, PATCH_SIZE, stride):
+                for tx in _starts(ww, PATCH_SIZE, stride):
+                    patch = work[ty : ty + PATCH_SIZE, tx : tx + PATCH_SIZE]
+                    ph, pw = patch.shape[:2]
+                    res = model.predict(source=patch, conf=0.10, iou=PATCH_IOU, imgsz=PATCH_SIZE,
+                                        max_det=MAX_DET, retina_masks=True, verbose=False)[0]
+                    if res.boxes is None or len(res.boxes) == 0:
+                        continue
+                    xyxy = res.boxes.xyxy.cpu().numpy()
+                    conf = res.boxes.conf.cpu().numpy()
+                    mdata = res.masks.data.cpu().numpy() if res.masks is not None else None
+                    for i in range(len(xyxy)):
+                        x0, y0, x1, y1 = xyxy[i]
+                        if (tx > 0 and x0 < 2) or (ty > 0 and y0 < 2) or (tx + pw < ww and x1 > pw - 2) or (ty + ph < wh and y1 > ph - 2):
+                            continue
+                        boxes.append([x0 + tx, y0 + ty, x1 + tx, y1 + ty, float(conf[i])])
+                        crop = None
+                        if mdata is not None and i < len(mdata):
+                            m = mdata[i][:ph, :pw] > 0.5
+                            r0, c0 = max(0, int(y0) - 1), max(0, int(x0) - 1)
+                            r1, c1 = min(ph, int(math.ceil(y1)) + 1), min(pw, int(math.ceil(x1)) + 1)
+                            crop = (r0 + ty, c0 + tx, m[r0:r1, c0:c1])
+                        masks.append(crop)
 
     raw = len(boxes)
     if raw:

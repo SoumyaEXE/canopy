@@ -130,9 +130,24 @@ def canopy_mask(
     else:
         opened = morphology.opening(raw, disk)
         closed = morphology.closing(opened, disk)
-    # max_size removes objects/holes of size <= max_size, so pass min_px - 1 to keep exactly-1 m² objects.
-    no_small = morphology.remove_small_objects(closed, max_size=min_px - 1) if min_px > 1 else closed
-    filled = morphology.remove_small_holes(no_small, max_size=min_px - 1) if min_px > 1 else no_small
+    # Compatibility helper for skimage version differences (min_size / area_threshold / max_size)
+    def _clean_small_objects(arr, size):
+        try:
+            return morphology.remove_small_objects(arr, min_size=size + 1)
+        except TypeError:
+            return morphology.remove_small_objects(arr, max_size=size)
+
+    def _clean_small_holes(arr, size):
+        try:
+            return morphology.remove_small_holes(arr, area_threshold=size + 1)
+        except TypeError:
+            try:
+                return morphology.remove_small_holes(arr, min_size=size + 1)
+            except TypeError:
+                return morphology.remove_small_holes(arr, max_size=size)
+
+    no_small = _clean_small_objects(closed, min_px - 1) if min_px > 1 else closed
+    filled = _clean_small_holes(no_small, min_px - 1) if min_px > 1 else no_small
     final = filled & aoi
 
     info = {

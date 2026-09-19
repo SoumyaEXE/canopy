@@ -208,12 +208,12 @@ def run_pipeline(
             progress("segmenting_crowns", f"Detecting trees with {variant} ({detector.VARIANTS[variant]})")
             boxes, masks, det_info = detector.detect(scene.rgb, m, model_variant=variant)
             if len(boxes) == 0 and cover_pct > 5.0:
-                # A model that sees canopy but no trees is out of its depth; do not report zero trees.
+                # A model that sees canopy but no trees is out of its depth; fallback to classical blob detection.
                 warnings.append(
-                    f"The AI detector ({variant}) found no trees in imagery that is {cover_pct:.0f}% canopy, so classical "
-                    "blob detection was used instead."
+                    f"The AI detector ({variant}) found no discrete boxes in imagery that is {cover_pct:.0f}% canopy, so classical "
+                    "blob detection was used to segment the crowns."
                 )
-                boxes = None
+                detector_used = "classical"
             else:
                 progress("segmenting_crowns", "Shaping crown outlines from the canopy mask")
                 labels, distance, hyb_info = detector.crowns_from_boxes(boxes, canopy, aoi, m, masks=masks)
