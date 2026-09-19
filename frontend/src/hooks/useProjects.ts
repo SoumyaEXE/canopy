@@ -46,6 +46,10 @@ interface RunData {
 // Results of finished runs never change, so they are cached for the session.
 const runCache = new Map<string, Promise<RunData>>();
 
+export function prefetchRun(runId: string) {
+  if (runId) loadRun(runId);
+}
+
 function loadRun(runId: string): Promise<RunData> {
   let p = runCache.get(runId);
   if (!p) {

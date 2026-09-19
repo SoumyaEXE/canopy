@@ -30,7 +30,7 @@ import type { NavGroup } from "@/components/canopy/sidebar";
 import { EmptyState, Panel, Skeleton, SOURCE_LABEL, formatRelative } from "@/components/canopy/ui";
 import { MIN_CLICKS, ValidationPanel } from "@/components/canopy/validation-panel";
 import { MapLegend, ParametersPanel, ResultsSummary, StylePanel, countChanges, type MapStyleState } from "@/components/canopy/workspace-panels";
-import { useProject } from "@/hooks/useProjects";
+import { prefetchRun, useProject } from "@/hooks/useProjects";
 import type { ProjectTab, Route } from "@/lib/router";
 import { AuditPage } from "@/pages/audit";
 import { CrownsPage } from "@/pages/crowns";
@@ -350,11 +350,9 @@ export function ProjectView({
             />
           </MapErrorBoundary>
           {p.loadingRun && (
-            <div className="absolute inset-0 z-10 flex items-center justify-center bg-background-secondary-default/60 backdrop-blur-[2px]">
-              <span className="flex items-center gap-2 rounded-full border border-separator-border bg-background-primary-default px-3 py-1.5 text-body-2-medium text-text-secondary shadow-dropdown">
-                <span className="size-2 animate-pulse rounded-full bg-brand-strong" />
-                Loading run
-              </span>
+            <div className="pointer-events-none absolute top-3 right-14 z-20 flex items-center gap-2 rounded-full border border-separator-border bg-background-primary-default/90 px-3 py-1.5 text-body-2-medium text-text-secondary shadow-dropdown backdrop-blur-sm">
+              <span className="size-2 animate-pulse rounded-full bg-brand-strong" />
+              Loading run…
             </div>
           )}
           {p.result && !validating && (
@@ -509,6 +507,9 @@ function RunPicker({
             <DropdownItem
               key={r.id}
               selected={r.id === activeId}
+              onMouseEnter={() => {
+                if (r.status === "succeeded") prefetchRun(r.id);
+              }}
               onSelect={() => {
                 if (r.status !== "succeeded") return;
                 setOpen(false);

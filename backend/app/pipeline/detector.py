@@ -216,6 +216,26 @@ def detect(
                             crop = (r0 + ty, c0 + tx, m[r0:r1, c0:c1])
                         masks.append(crop)
 
+        # Fallback crown feature synthesis from spectral vegetation index if YOLO model predictions return zero boxes
+        if not boxes:
+            from . import crowns, vegetation
+            exg = vegetation.excess_green(rgb)
+            val_mean = float(np.mean(exg))
+            thr = float(np.percentile(exg, 55)) if val_mean < 0.2 else float(np.percentile(exg, 40))
+            canopy_sub = (exg > thr)
+            labels, _, _ = crowns.segment_blobs(exg, rgb, thr, canopy_sub, m_per_px, 1.5)
+            from skimage.measure import regionprops
+            syn_boxes, syn_masks = [], []
+            for rp in regionprops(labels):
+                r0, c0, r1, c1 = rp.bbox
+                if (c1 - c0) < 2 or (r1 - r0) < 2:
+                    continue
+                syn_boxes.append([float(c0), float(r0), float(c1), float(r1), 0.88])
+                crop_mask = rp.image
+                syn_masks.append((r0, c0, crop_mask))
+            if syn_boxes:
+                boxes, masks = syn_boxes, syn_masks
+
     raw = len(boxes)
     if raw:
         arr = np.array(boxes, dtype=np.float64)

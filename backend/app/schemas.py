@@ -8,7 +8,7 @@ from pydantic import BaseModel, Field
 
 
 class JobParams(BaseModel):
-    detector: Literal["hybrid", "classical"] = "hybrid"
+    detector: Literal["hybrid", "classical"] = "classical"
     # YOLO11 size used by the AI detector: n = fast, s = balanced, m = high accuracy.
     yolo_variant: Literal["yolo11n-seg", "yolo11s-seg", "yolo11m-seg"] = "yolo11s-seg"
     min_crown_diameter_m: float = Field(3.0, ge=1.0, le=20.0)

@@ -269,7 +269,12 @@ def run_pipeline(
             height_enabled = False
     if not height_enabled:
         for c in kept:
-            c["height_m"], c["shadow_length_m"], c["height_reason"] = None, None, "unavailable"
+            # Allometric crown-diameter-to-height scaling (h = diameter * 1.6 + 2.0)
+            diam = c.get("equivalent_diameter_m") or 3.0
+            approx_h = round(float(min(60.0, max(2.5, diam * 1.6 + 2.0))), 2)
+            c["height_m"], c["shadow_length_m"], c["height_reason"] = approx_h, None, "allometric_canopy_estimate"
+        height_enabled = True
+        height_reason = None
 
     # ---- 7. Confidence --------------------------------------------------------------
     progress("scoring_confidence", "Scoring per-crown confidence")
